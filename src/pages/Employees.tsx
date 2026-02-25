@@ -10,6 +10,7 @@ import { formatCurrency, computeAllDeductions } from "@/lib/payroll-utils";
 import { useAuth } from "@/hooks/useAuth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EmployeeFormDialog from "@/components/employees/EmployeeFormDialog";
+import EmployeeImportDialog from "@/components/employees/EmployeeImportDialog";
 
 interface Employee {
   id: string;
@@ -134,15 +135,18 @@ export default function Employees() {
             </SelectContent>
           </Select>
           {isAdminOrHR() && (
-            <EmployeeFormDialog
-              open={dialogOpen}
-              onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null); }}
-              form={form}
-              setForm={setForm}
-              onSave={handleSave}
-              editing={!!editing}
-              emptyForm={emptyForm}
-            />
+            <>
+              <EmployeeFormDialog
+                open={dialogOpen}
+                onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null); }}
+                form={form}
+                setForm={setForm}
+                onSave={handleSave}
+                editing={!!editing}
+                emptyForm={emptyForm}
+              />
+              <EmployeeImportDialog onImportComplete={fetchEmployees} />
+            </>
           )}
         </div>
       </div>
