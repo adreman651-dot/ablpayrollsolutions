@@ -82,6 +82,7 @@ export type Database = {
           id: string
           job_title: string | null
           last_name: string
+          leave_credits: number | null
           middle_name: string | null
           pagibig_number: string | null
           philhealth_number: string | null
@@ -105,6 +106,7 @@ export type Database = {
           id?: string
           job_title?: string | null
           last_name: string
+          leave_credits?: number | null
           middle_name?: string | null
           pagibig_number?: string | null
           philhealth_number?: string | null
@@ -128,6 +130,7 @@ export type Database = {
           id?: string
           job_title?: string | null
           last_name?: string
+          leave_credits?: number | null
           middle_name?: string | null
           pagibig_number?: string | null
           philhealth_number?: string | null
