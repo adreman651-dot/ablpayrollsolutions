@@ -10,6 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Save, UserPlus } from "lucide-react";
+import {
+  SSS_TABLE, PHILHEALTH_RATE, PHILHEALTH_FLOOR, PHILHEALTH_CEILING, formatCurrency,
+} from "@/lib/payroll-utils";
 
 interface Setting {
   id: string;
@@ -23,6 +26,17 @@ interface UserWithRole {
   email: string;
   role: string;
   full_name: string;
+}
+
+// Generate PhilHealth sample table rows
+function generatePhilHealthRows() {
+  const sampleSalaries = [10000, 15000, 20000, 25000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000];
+  return sampleSalaries.map(salary => {
+    const base = Math.max(Math.min(salary, PHILHEALTH_CEILING), PHILHEALTH_FLOOR);
+    const total = base * PHILHEALTH_RATE;
+    const share = total / 2;
+    return { salary, total, employee: share, employer: share };
+  });
 }
 
 export default function Settings() {
@@ -41,7 +55,6 @@ export default function Settings() {
 
     setSettings(settingsRes.data || []);
 
-    // Fetch profiles for role users
     const roleData = rolesRes.data || [];
     const userIds = [...new Set(roleData.map(r => r.user_id))];
     if (userIds.length) {
@@ -67,25 +80,28 @@ export default function Settings() {
   };
 
   const assignRole = async () => {
-    // Look up user by email in profiles
-    // Since we can't query auth.users, we need the user to have signed up first
     toast.info("The user must sign up first. Then assign their role using their user ID from the profiles table.");
     setRoleDialog(false);
   };
+
+  const philHealthRows = generatePhilHealthRows();
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">Settings</h1>
-        <p className="page-description">Configure system settings and manage roles</p>
+        <p className="page-description">Configure system settings, manage roles, and view contribution schedules</p>
       </div>
 
       <Tabs defaultValue="general">
-        <TabsList>
-          <TabsTrigger value="general">General Settings</TabsTrigger>
+        <TabsList className="flex-wrap h-auto gap-1">
+          <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="roles">User Roles</TabsTrigger>
+          <TabsTrigger value="sss">SSS Schedule</TabsTrigger>
+          <TabsTrigger value="philhealth">PhilHealth Schedule</TabsTrigger>
         </TabsList>
 
+        {/* ─── General Settings ───────────────────────────────────── */}
         <TabsContent value="general" className="mt-6">
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <Table>
@@ -123,6 +139,7 @@ export default function Settings() {
           </div>
         </TabsContent>
 
+        {/* ─── User Roles ─────────────────────────────────────────── */}
         <TabsContent value="roles" className="mt-6">
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="p-4 border-b border-border flex items-center justify-between">
@@ -136,7 +153,6 @@ export default function Settings() {
                   <div className="space-y-4 mt-4">
                     <p className="text-sm text-muted-foreground">
                       To assign a role, the user must first sign up. After signing up, you can assign them a role.
-                      You'll need to run a database query to insert the role assignment.
                     </p>
                     <div className="space-y-2">
                       <Label>Role</Label>
@@ -173,6 +189,80 @@ export default function Settings() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        </TabsContent>
+
+        {/* ─── SSS Contribution Schedule ──────────────────────────── */}
+        <TabsContent value="sss" className="mt-6">
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-display font-semibold">SSS Contribution Table (2025–2026)</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Based on official SSS contribution schedule. MSC range: ₱5,000 – ₱35,000.
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-right">MSC</TableHead>
+                    <TableHead className="text-right">ER Share (10%)</TableHead>
+                    <TableHead className="text-right">EE Share (5%)</TableHead>
+                    <TableHead className="text-right">Total SSS</TableHead>
+                    <TableHead className="text-right">EC</TableHead>
+                    <TableHead className="text-right">Total ER</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {SSS_TABLE.map(row => (
+                    <TableRow key={row.msc}>
+                      <TableCell className="text-right font-mono text-sm">{formatCurrency(row.msc)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.employerShare)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.employeeShare)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.totalSSS)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.ecContribution)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.totalEmployer)}</TableCell>
+                      <TableCell className="text-right text-sm font-medium">{formatCurrency(row.totalContribution)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ─── PhilHealth Contribution Schedule ───────────────────── */}
+        <TabsContent value="philhealth" className="mt-6">
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-display font-semibold">PhilHealth Contribution Table (2025–2026)</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Premium Rate: {(PHILHEALTH_RATE * 100).toFixed(1)}% of Monthly Basic Salary. Floor: {formatCurrency(PHILHEALTH_FLOOR)} · Ceiling: {formatCurrency(PHILHEALTH_CEILING)} · Split: 50/50 (Employer + Employee)
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-right">Monthly Basic Salary</TableHead>
+                    <TableHead className="text-right">Total (5%)</TableHead>
+                    <TableHead className="text-right">EE Share (2.5%)</TableHead>
+                    <TableHead className="text-right">ER Share (2.5%)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {philHealthRows.map(row => (
+                    <TableRow key={row.salary}>
+                      <TableCell className="text-right font-mono text-sm">{formatCurrency(row.salary)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.total)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.employee)}</TableCell>
+                      <TableCell className="text-right text-sm">{formatCurrency(row.employer)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         </TabsContent>
       </Tabs>
