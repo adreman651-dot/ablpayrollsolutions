@@ -47,6 +47,7 @@ export default function Employees() {
   const [editing, setEditing] = useState<Employee | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [pagibigSettings, setPagibigSettings] = useState<{ employee: number; employer: number } | undefined>(undefined);
 
   const fetchEmployees = async () => {
     const { data, error } = await supabase.from("employees").select("*").order("created_at", { ascending: false });
@@ -55,7 +56,15 @@ export default function Employees() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchEmployees(); }, []);
+  const fetchPagibigSettings = async () => {
+    const { data } = await supabase.from("system_settings").select("key, value").in("key", ["pagibig_employee", "pagibig_employer"]);
+    if (data && data.length === 2) {
+      const map = Object.fromEntries(data.map(d => [d.key, parseFloat(d.value)]));
+      setPagibigSettings({ employee: map.pagibig_employee || 400, employer: map.pagibig_employer || 400 });
+    }
+  };
+
+  useEffect(() => { fetchEmployees(); fetchPagibigSettings(); }, []);
 
   const handleSave = async () => {
     try {
@@ -113,7 +122,7 @@ export default function Employees() {
     return matchesSearch && matchesDept;
   });
 
-  const deductions = selectedEmployee ? computeAllDeductions(selectedEmployee.basic_salary) : null;
+  const deductions = selectedEmployee ? computeAllDeductions(selectedEmployee.basic_salary, pagibigSettings) : null;
 
   return (
     <div>

@@ -140,17 +140,24 @@ export function computePhilHealth(monthlySalary: number): { employee: number; em
 }
 
 // ─── Pag-IBIG ────────────────────────────────────────────────────────
-export function computePagIBIG(monthlySalary: number): { employee: number; employer: number } {
-  let ee: number;
-  if (monthlySalary <= 1500) {
-    ee = monthlySalary * 0.01;
-  } else {
-    ee = Math.min(monthlySalary * 0.02, 100);
+// Default rates (fallback if settings not loaded)
+export const PAGIBIG_DEFAULT_EMPLOYEE = 400;
+export const PAGIBIG_DEFAULT_EMPLOYER = 400;
+
+export function computePagIBIG(
+  _monthlySalary: number,
+  overrides?: { employee: number; employer: number }
+): { employee: number; employer: number } {
+  if (overrides) {
+    return {
+      employee: overrides.employee,
+      employer: overrides.employer,
+    };
   }
-  const er = Math.min(monthlySalary <= 1500 ? monthlySalary * 0.02 : monthlySalary * 0.02, 100);
+  // Fallback to defaults
   return {
-    employee: parseFloat(ee.toFixed(2)),
-    employer: parseFloat(er.toFixed(2)),
+    employee: PAGIBIG_DEFAULT_EMPLOYEE,
+    employer: PAGIBIG_DEFAULT_EMPLOYER,
   };
 }
 
@@ -198,10 +205,13 @@ export function formatCurrency(amount: number): string {
 }
 
 // Compute all government deductions at once
-export function computeAllDeductions(monthlySalary: number) {
+export function computeAllDeductions(
+  monthlySalary: number,
+  pagibigOverrides?: { employee: number; employer: number }
+) {
   const sss = computeSSS(monthlySalary);
   const philhealth = computePhilHealth(monthlySalary);
-  const pagibig = computePagIBIG(monthlySalary);
+  const pagibig = computePagIBIG(monthlySalary, pagibigOverrides);
   const taxableIncome = monthlySalary - sss.employee - philhealth.employee - pagibig.employee;
   const withholdingTax = computeWithholdingTax(taxableIncome);
 

@@ -12,6 +12,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Save, UserPlus } from "lucide-react";
 import {
   SSS_TABLE, PHILHEALTH_RATE, PHILHEALTH_FLOOR, PHILHEALTH_CEILING, formatCurrency,
+  PAGIBIG_DEFAULT_EMPLOYEE, PAGIBIG_DEFAULT_EMPLOYER,
 } from "@/lib/payroll-utils";
 
 interface Setting {
@@ -99,6 +100,7 @@ export default function Settings() {
           <TabsTrigger value="roles">User Roles</TabsTrigger>
           <TabsTrigger value="sss">SSS Schedule</TabsTrigger>
           <TabsTrigger value="philhealth">PhilHealth Schedule</TabsTrigger>
+          <TabsTrigger value="pagibig">Pag-IBIG</TabsTrigger>
         </TabsList>
 
         {/* ─── General Settings ───────────────────────────────────── */}
@@ -262,6 +264,63 @@ export default function Settings() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          </div>
+        </TabsContent>
+        {/* ─── Pag-IBIG Contribution Settings ──────────────────────── */}
+        <TabsContent value="pagibig" className="mt-6">
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-display font-semibold">Pag-IBIG Contribution Settings</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Configure the fixed monthly Pag-IBIG employee and employer shares. Changes here will reflect in every employee's deduction preview and payroll processing.
+              </p>
+            </div>
+            <div className="p-6">
+              {(() => {
+                const eeRow = settings.find(s => s.key === "pagibig_employee");
+                const erRow = settings.find(s => s.key === "pagibig_employer");
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-lg">
+                    <div className="space-y-2">
+                      <Label className="font-medium">Employee Share (₱)</Label>
+                      {eeRow ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            value={eeRow.value}
+                            onChange={e => setSettings(prev => prev.map(p => p.id === eeRow.id ? { ...p, value: e.target.value } : p))}
+                            className="w-32"
+                          />
+                          <Button size="sm" variant="outline" onClick={() => updateSetting(eeRow.id, eeRow.value)}>
+                            <Save className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Default: ₱{PAGIBIG_DEFAULT_EMPLOYEE}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="font-medium">Employer Share (₱)</Label>
+                      {erRow ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            value={erRow.value}
+                            onChange={e => setSettings(prev => prev.map(p => p.id === erRow.id ? { ...p, value: e.target.value } : p))}
+                            className="w-32"
+                          />
+                          <Button size="sm" variant="outline" onClick={() => updateSetting(erRow.id, erRow.value)}>
+                            <Save className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Default: ₱{PAGIBIG_DEFAULT_EMPLOYER}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </TabsContent>
