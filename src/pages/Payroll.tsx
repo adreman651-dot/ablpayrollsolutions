@@ -71,6 +71,11 @@ export default function Payroll() {
   const processRun = async (run: PayrollRun) => {
     setProcessing(true);
     try {
+      // Get Pag-IBIG settings
+      const { data: pagibigData } = await supabase.from("system_settings").select("key, value").in("key", ["pagibig_employee", "pagibig_employer"]);
+      const pagibigMap = Object.fromEntries((pagibigData || []).map(d => [d.key, parseFloat(d.value)]));
+      const pagibigOverrides = { employee: pagibigMap.pagibig_employee || 400, employer: pagibigMap.pagibig_employer || 400 };
+
       // Get all active employees
       const { data: employees, error: empErr } = await supabase.from("employees")
         .select("id, basic_salary, employee_code").eq("employment_status", "active");
@@ -100,7 +105,7 @@ export default function Payroll() {
 
         const sss = computeSSS(emp.basic_salary);
         const ph = computePhilHealth(emp.basic_salary);
-        const pi = computePagIBIG(emp.basic_salary);
+        const pi = computePagIBIG(emp.basic_salary, pagibigOverrides);
 
         const grossPay = basicPay;
         const taxableIncome = grossPay - sss.employee - ph.employee - pi.employee;
