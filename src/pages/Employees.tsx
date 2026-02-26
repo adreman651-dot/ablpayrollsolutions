@@ -223,6 +223,9 @@ export default function Employees() {
                   <span>SSS (ER)</span><span className="text-muted-foreground">{formatCurrency(deductions.sss.employer)}</span>
                 </div>
                 <div className="flex justify-between border-b border-border pb-2">
+                  <span>SSS EC</span><span className="text-muted-foreground">{formatCurrency(deductions.sss.ec)}</span>
+                </div>
+                <div className="flex justify-between border-b border-border pb-2">
                   <span>PhilHealth (EE)</span><span>{formatCurrency(deductions.philhealth.employee)}</span>
                 </div>
                 <div className="flex justify-between border-b border-border pb-2">
