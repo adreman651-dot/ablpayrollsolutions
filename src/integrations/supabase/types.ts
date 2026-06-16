@@ -85,6 +85,7 @@ export type Database = {
           leave_credits: number | null
           middle_name: string | null
           pagibig_number: string | null
+          payroll_type: string
           philhealth_number: string | null
           phone: string | null
           profile_photo_url: string | null
@@ -109,6 +110,7 @@ export type Database = {
           leave_credits?: number | null
           middle_name?: string | null
           pagibig_number?: string | null
+          payroll_type?: string
           philhealth_number?: string | null
           phone?: string | null
           profile_photo_url?: string | null
@@ -133,6 +135,7 @@ export type Database = {
           leave_credits?: number | null
           middle_name?: string | null
           pagibig_number?: string | null
+          payroll_type?: string
           philhealth_number?: string | null
           phone?: string | null
           profile_photo_url?: string | null
@@ -323,6 +326,7 @@ export type Database = {
           absence_deductions: number | null
           allowances: number | null
           basic_pay: number | null
+          cash_advance: number | null
           created_at: string
           employee_id: string
           gross_pay: number | null
@@ -344,6 +348,7 @@ export type Database = {
           absence_deductions?: number | null
           allowances?: number | null
           basic_pay?: number | null
+          cash_advance?: number | null
           created_at?: string
           employee_id: string
           gross_pay?: number | null
@@ -365,6 +370,7 @@ export type Database = {
           absence_deductions?: number | null
           allowances?: number | null
           basic_pay?: number | null
+          cash_advance?: number | null
           created_at?: string
           employee_id?: string
           gross_pay?: number | null
