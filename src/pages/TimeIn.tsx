@@ -1,25 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Clock, MapPin, LogIn, LogOut, Delete, ArrowLeft } from "lucide-react";
+import { ArrowLeft, Delete } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "in" | "out";
 
 export default function TimeIn() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [code, setCode] = useState("");
+  const [employeeName, setEmployeeName] = useState("");
   const [now, setNow] = useState(new Date());
   const [submitting, setSubmitting] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [address, setAddress] = useState<string>("");
+  const [mode, setMode] = useState<Mode>("in");
+  const [cameraReady, setCameraReady] = useState(false);
 
+  // Clock
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // GPS
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watch = navigator.geolocation.watchPosition(
@@ -27,7 +33,6 @@ export default function TimeIn() {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         setLocation({ lat, lng });
-        // Reverse geocode (best-effort, free public endpoint)
         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`)
           .then(r => r.json())
           .then(d => setAddress(d.display_name || ""))
@@ -39,25 +44,70 @@ export default function TimeIn() {
     return () => navigator.geolocation.clearWatch(watch);
   }, []);
 
-  const press = (k: string) => setCode(c => (c.length >= 12 ? c : c + k));
+  // Front camera
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 1280 } },
+          audio: false,
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          setCameraReady(true);
+        }
+      } catch {
+        toast.error("Camera access denied. Selfie capture disabled.");
+      }
+    })();
+    return () => { stream?.getTracks().forEach(t => t.stop()); };
+  }, []);
+
+  // Lookup employee name as code is entered
+  useEffect(() => {
+    if (!code) { setEmployeeName(""); return; }
+    const lookup = code.startsWith("ABL-") ? code : "ABL-" + code.padStart(5, "0");
+    const tid = setTimeout(async () => {
+      const { data } = await supabase
+        .from("employees")
+        .select("first_name, last_name")
+        .eq("employee_code", lookup)
+        .maybeSingle();
+      setEmployeeName(data ? `${data.first_name} ${data.last_name}`.toUpperCase() : "");
+    }, 200);
+    return () => clearTimeout(tid);
+  }, [code]);
+
+  const press = (k: string) => setCode(c => (c.length >= 8 ? c : c + k));
   const clear = () => setCode("");
   const back = () => setCode(c => c.slice(0, -1));
 
-  const submit = async (mode: Mode) => {
-    if (!code.trim()) { toast.error("Enter your Employee Code"); return; }
+  const captureSelfie = (): string | null => {
+    if (!videoRef.current || !canvasRef.current || !cameraReady) return null;
+    const v = videoRef.current;
+    const c = canvasRef.current;
+    c.width = 480; c.height = 640;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    // Mirror selfie to match preview
+    ctx.translate(c.width, 0); ctx.scale(-1, 1);
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.6);
+  };
+
+  const submit = async () => {
+    if (!code.trim()) { toast.error("Enter your Employee ID"); return; }
     setSubmitting(true);
     try {
-      // Accept either full code "ABL-00001" or just digits "00001" / "1"
-      let lookup = code.trim().toUpperCase();
-      if (!lookup.startsWith("ABL-")) lookup = "ABL-" + lookup.padStart(5, "0");
-
-      const { data: emp, error: empErr } = await supabase
+      const lookup = "ABL-" + code.padStart(5, "0");
+      const { data: emp } = await supabase
         .from("employees")
         .select("id, first_name, last_name, employee_code")
         .eq("employee_code", lookup)
         .maybeSingle();
-
-      if (empErr || !emp) { toast.error(`Employee ${lookup} not found`); return; }
+      if (!emp) { toast.error(`Employee ${lookup} not found`); return; }
 
       const today = new Date().toISOString().split("T")[0];
       const { data: existing } = await supabase
@@ -68,12 +118,12 @@ export default function TimeIn() {
         .maybeSingle();
 
       const stamp = new Date().toISOString();
+      const selfie = captureSelfie();
       const lat = location?.lat ?? null;
       const lng = location?.lng ?? null;
 
       if (mode === "in") {
         if (existing) { toast.error("Already timed in today"); return; }
-        // Compute lateness
         const { data: settings } = await supabase
           .from("system_settings").select("value").eq("key", "cutoff_time").maybeSingle();
         let lateMinutes = 0;
@@ -85,18 +135,20 @@ export default function TimeIn() {
         const { error } = await supabase.from("attendance").insert({
           employee_id: emp.id, date: today, time_in: stamp,
           latitude: lat, longitude: lng,
+          selfie_url: selfie,
           late_minutes: lateMinutes,
           status: lateMinutes > 0 ? "late" : "present",
+          notes: address || null,
         });
         if (error) { toast.error(error.message); return; }
-        toast.success(`${emp.first_name}, time in recorded${lateMinutes ? ` (${lateMinutes} min late)` : ""}`);
+        toast.success(`✓ ${emp.first_name}, TIME IN recorded${lateMinutes ? ` (${lateMinutes}m late)` : ""}`);
       } else {
         if (!existing) { toast.error("No time-in record for today"); return; }
         if (existing.time_out) { toast.error("Already timed out today"); return; }
         const { error } = await supabase.from("attendance")
-          .update({ time_out: stamp }).eq("id", existing.id);
+          .update({ time_out: stamp, selfie_url: selfie || undefined }).eq("id", existing.id);
         if (error) { toast.error(error.message); return; }
-        toast.success(`${emp.first_name}, time out recorded`);
+        toast.success(`✓ ${emp.first_name}, TIME OUT recorded`);
       }
       setCode("");
     } finally {
@@ -104,75 +156,82 @@ export default function TimeIn() {
     }
   };
 
-  const keys = ["1","2","3","4","5","6","7","8","9","clear","0","back"];
+  const keys = ["1","2","3","4","5","6","7","8","9","clear","0","done"];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-primary/10 to-background p-4 flex flex-col">
-      <div className="max-w-md w-full mx-auto flex-1 flex flex-col">
-        <div className="flex items-center justify-between mb-4">
-          <Link to="/auth"><Button variant="ghost" size="sm"><ArrowLeft className="w-4 h-4 mr-1" /> Admin</Button></Link>
-          <h1 className="font-display font-bold text-lg">Employee Time In / Out</h1>
-          <div className="w-16" />
-        </div>
+    <div className="fixed inset-0 bg-black overflow-hidden">
+      {/* Fullscreen mirrored video */}
+      <video
+        ref={videoRef}
+        playsInline muted autoPlay
+        className="absolute inset-0 w-full h-full object-cover [transform:scaleX(-1)]"
+      />
+      <canvas ref={canvasRef} className="hidden" />
 
-        {/* Clock + location */}
-        <Card className="p-4 mb-4 text-center bg-primary text-primary-foreground">
-          <div className="flex items-center justify-center gap-2 text-sm opacity-90">
-            <Clock className="w-4 h-4" />
-            {now.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-          </div>
-          <div className="text-4xl font-display font-bold tracking-wide my-1">
-            {now.toLocaleTimeString()}
-          </div>
-          <div className="flex items-start justify-center gap-1 text-xs opacity-90 mt-2">
-            <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
-            <span className="line-clamp-2">
-              {location
-                ? (address || `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`)
-                : "Acquiring GPS location…"}
-            </span>
-          </div>
-        </Card>
+      {/* Dark overlay for readability */}
+      <div className="absolute inset-0 bg-black/35" />
 
-        {/* Code display */}
-        <Card className="p-4 mb-3">
-          <div className="text-xs text-muted-foreground mb-1 text-center">EMPLOYEE CODE</div>
-          <div className="text-center text-3xl font-mono tracking-widest min-h-[3rem] flex items-center justify-center">
-            {code || <span className="text-muted-foreground/40">— — — — —</span>}
-          </div>
-        </Card>
-
-        {/* Keypad */}
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          {keys.map(k => {
-            if (k === "clear") return (
-              <Button key={k} variant="outline" className="h-16 text-base" onClick={clear} disabled={submitting}>Clear</Button>
-            );
-            if (k === "back") return (
-              <Button key={k} variant="outline" className="h-16" onClick={back} disabled={submitting}><Delete className="w-5 h-5" /></Button>
-            );
-            return (
-              <Button key={k} variant="secondary" className="h-16 text-2xl font-display" onClick={() => press(k)} disabled={submitting}>
-                {k}
-              </Button>
-            );
-          })}
-        </div>
-
-        {/* Action buttons */}
-        <div className="grid grid-cols-2 gap-2">
-          <Button className="h-16 text-base" onClick={() => submit("in")} disabled={submitting}>
-            <LogIn className="w-5 h-5 mr-2" /> TIME IN
-          </Button>
-          <Button className="h-16 text-base" variant="secondary" onClick={() => submit("out")} disabled={submitting}>
-            <LogOut className="w-5 h-5 mr-2" /> TIME OUT
-          </Button>
-        </div>
-
-        <p className="text-center text-xs text-muted-foreground mt-4">
-          Tip: enter just the number (e.g. <span className="font-mono">1</span> for <span className="font-mono">ABL-00001</span>)
-        </p>
+      {/* Grid overlay */}
+      <div className="absolute inset-0 pointer-events-none grid grid-cols-3 grid-rows-3">
+        {Array.from({ length: 9 }).map((_, i) => (
+          <div key={i} className="border border-white/30" />
+        ))}
       </div>
+
+      {/* Top bar */}
+      <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-3 text-white">
+        <Link to="/auth"><Button variant="ghost" size="icon" className="text-white hover:bg-white/10"><ArrowLeft className="w-6 h-6" /></Button></Link>
+        <div className="text-sm font-mono opacity-80">{now.toLocaleTimeString()}</div>
+        <div className="flex gap-1 bg-black/40 rounded-full p-1">
+          <Button size="sm" variant={mode === "in" ? "default" : "ghost"} className={mode === "in" ? "" : "text-white hover:bg-white/10"} onClick={() => setMode("in")}>IN</Button>
+          <Button size="sm" variant={mode === "out" ? "default" : "ghost"} className={mode === "out" ? "" : "text-white hover:bg-white/10"} onClick={() => setMode("out")}>OUT</Button>
+        </div>
+      </div>
+
+      {/* Header text */}
+      <div className="absolute top-16 left-0 right-0 text-center text-white drop-shadow-lg pointer-events-none">
+        <div className="text-3xl font-display font-bold tracking-widest">
+          TIME {mode === "in" ? "IN" : "OUT"}
+        </div>
+        <div className="text-5xl font-display font-bold mt-2 min-h-[3.5rem]">
+          {code || <span className="opacity-40">— — — — —</span>}
+        </div>
+        <div className="text-2xl font-display font-semibold mt-1 min-h-[2rem]">
+          {employeeName || <span className="opacity-40 text-base">Enter Employee ID</span>}
+        </div>
+      </div>
+
+      {/* GPS info (left side, mid) */}
+      <div className="absolute top-[42%] left-3 right-3 text-white text-xs drop-shadow-lg pointer-events-none">
+        <div className="line-clamp-2 opacity-90">
+          {address || "Acquiring location…"}
+        </div>
+        {location && (
+          <>
+            <div className="opacity-80">Lat: {location.lat.toFixed(7)}</div>
+            <div className="opacity-80">Long: {location.lng.toFixed(7)}</div>
+          </>
+        )}
+        <div className="opacity-80">{now.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</div>
+      </div>
+
+      {/* Keypad — overlaid on bottom half of camera */}
+      <div className="absolute bottom-0 left-0 right-0 grid grid-cols-3 gap-px text-white">
+        {keys.map(k => {
+          if (k === "clear")
+            return <button key={k} onClick={clear} disabled={submitting} className="h-20 text-2xl font-light hover:bg-white/15 active:bg-white/30 transition">Clear</button>;
+          if (k === "done")
+            return <button key={k} onClick={submit} disabled={submitting || !code} className="h-20 text-2xl font-medium hover:bg-primary/40 active:bg-primary/60 transition disabled:opacity-40">Done</button>;
+          return <button key={k} onClick={() => press(k)} disabled={submitting} className="h-20 text-3xl font-light hover:bg-white/15 active:bg-white/30 transition">{k}</button>;
+        })}
+      </div>
+
+      {/* Backspace floating */}
+      {code && (
+        <button onClick={back} className="absolute bottom-[260px] right-3 w-12 h-12 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70">
+          <Delete className="w-5 h-5" />
+        </button>
+      )}
     </div>
   );
 }
