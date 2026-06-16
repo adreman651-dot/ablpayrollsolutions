@@ -22,6 +22,10 @@ interface EmployeeFormData {
   tin_number: string;
   employment_status: string;
   payroll_type: string;
+  employee_code: string;
+  sss_schedule: string;
+  phic_schedule: string;
+  hdmf_schedule: string;
 }
 
 interface Props {
@@ -83,6 +87,10 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
 
           {/* ── Personal Information ── */}
           <SectionHeader title="Personal Information" />
+          <div className="space-y-2 col-span-full">
+            <Label>Employee Code *</Label>
+            <Input value={form.employee_code} onChange={e => setForm({ ...form, employee_code: e.target.value })} placeholder="e.g. ABL-00001" />
+          </div>
           <div className="space-y-2">
             <Label>Last Name *</Label>
             <Input value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} placeholder="Dela Cruz" />
@@ -166,18 +174,45 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           </div>
 
           {/* ── Government Numbers ── */}
-          <SectionHeader title="Government ID Numbers" />
+          <SectionHeader title="Government ID Numbers & Deduction Schedules" />
           <div className="space-y-2">
             <Label>SSS Number</Label>
             <Input value={form.sss_number} onChange={e => setForm({ ...form, sss_number: e.target.value })} placeholder="XX-XXXXXXX-X" />
+            <Select value={form.sss_schedule || "both"} onValueChange={v => setForm({ ...form, sss_schedule: v })}>
+              <SelectTrigger><SelectValue placeholder="Deduction Schedule" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="both">Both (15th & 30th)</SelectItem>
+                <SelectItem value="15th">15th Only</SelectItem>
+                <SelectItem value="30th">30th Only</SelectItem>
+                <SelectItem value="none">None (Optional)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label>PhilHealth Number</Label>
             <Input value={form.philhealth_number} onChange={e => setForm({ ...form, philhealth_number: e.target.value })} placeholder="XXXX-XXXXXXXX-X" />
+            <Select value={form.phic_schedule || "both"} onValueChange={v => setForm({ ...form, phic_schedule: v })}>
+              <SelectTrigger><SelectValue placeholder="Deduction Schedule" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="both">Both (15th & 30th)</SelectItem>
+                <SelectItem value="15th">15th Only</SelectItem>
+                <SelectItem value="30th">30th Only</SelectItem>
+                <SelectItem value="none">None (Optional)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
-            <Label>Pag-IBIG (HDMF) Number</Label>
+            <Label>Pag-IBIG Number</Label>
             <Input value={form.pagibig_number} onChange={e => setForm({ ...form, pagibig_number: e.target.value })} placeholder="XXXX-XXXX-XXXX" />
+            <Select value={form.hdmf_schedule || "both"} onValueChange={v => setForm({ ...form, hdmf_schedule: v })}>
+              <SelectTrigger><SelectValue placeholder="Deduction Schedule" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="both">Both (15th & 30th)</SelectItem>
+                <SelectItem value="15th">15th Only</SelectItem>
+                <SelectItem value="30th">30th Only</SelectItem>
+                <SelectItem value="none">None (Optional)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label>TIN Number</Label>

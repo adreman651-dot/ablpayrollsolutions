@@ -33,11 +33,12 @@ interface Employee {
 }
 
 const emptyForm = {
-  first_name: "", last_name: "", middle_name: "", email: "", phone: "",
+  employee_code: "", first_name: "", last_name: "", middle_name: "", email: "", phone: "",
   department: "", job_title: "", basic_salary: 0,
   hire_date: new Date().toISOString().split("T")[0],
   sss_number: "", philhealth_number: "", pagibig_number: "", tin_number: "",
   employment_status: "active", payroll_type: "monthly_rate",
+  sss_schedule: "both", phic_schedule: "both", hdmf_schedule: "both",
 };
 
 function payrollTypeLabel(type: string | null): string {
@@ -85,7 +86,8 @@ export default function Employees() {
 
   const handleSave = async () => {
     try {
-      const payload = {
+      const payload: any = {
+        employee_code: form.employee_code || "",
         first_name: form.first_name, last_name: form.last_name,
         middle_name: form.middle_name || null, email: form.email || null,
         phone: form.phone || null, department: form.department || null,
@@ -97,13 +99,16 @@ export default function Employees() {
         tin_number: form.tin_number || null,
         employment_status: form.employment_status,
         payroll_type: form.payroll_type || "monthly_rate",
+        sss_schedule: form.sss_schedule || "both",
+        phic_schedule: form.phic_schedule || "both",
+        hdmf_schedule: form.hdmf_schedule || "both",
       };
       if (editing) {
         const { error } = await supabase.from("employees").update(payload).eq("id", editing.id);
         if (error) throw error;
         toast.success("Employee updated successfully");
       } else {
-        const { error } = await supabase.from("employees").insert({ ...payload, employee_code: "" });
+        const { error } = await supabase.from("employees").insert(payload);
         if (error) throw error;
         toast.success("Employee added successfully");
       }
@@ -123,9 +128,10 @@ export default function Employees() {
     else { toast.success(`Employee ${newStatus === "active" ? "activated" : "deactivated"}`); fetchEmployees(); }
   };
 
-  const openEdit = (emp: Employee) => {
+  const openEdit = (emp: any) => {
     setEditing(emp);
     setForm({
+      employee_code: emp.employee_code || "",
       first_name: emp.first_name, last_name: emp.last_name,
       middle_name: emp.middle_name || "", email: emp.email || "",
       phone: emp.phone || "", department: emp.department || "",
@@ -135,6 +141,9 @@ export default function Employees() {
       pagibig_number: emp.pagibig_number || "", tin_number: emp.tin_number || "",
       employment_status: emp.employment_status,
       payroll_type: emp.payroll_type || "monthly_rate",
+      sss_schedule: emp.sss_schedule || "both",
+      phic_schedule: emp.phic_schedule || "both",
+      hdmf_schedule: emp.hdmf_schedule || "both",
     });
     setDialogOpen(true);
   };

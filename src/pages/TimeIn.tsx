@@ -50,7 +50,7 @@ export default function TimeIn() {
     (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 1280 } },
+          video: { facingMode: "user" }, // Removed strict zoom constraints
           audio: false,
         });
         if (videoRef.current) {
@@ -141,7 +141,7 @@ export default function TimeIn() {
           notes: address || null,
         });
         if (error) { toast.error(error.message); return; }
-        toast.success(`✓ ${emp.first_name}, TIME IN recorded${lateMinutes ? ` (${lateMinutes}m late)` : ""}`);
+        toast.success(`${emp.first_name} Successfully timed in!${lateMinutes ? ` (${lateMinutes}m late)` : ""}`);
       } else {
         if (!existing) { toast.error("No time-in record for today"); return; }
         if (existing.time_out) { toast.error("Already timed out today"); return; }
@@ -151,7 +151,6 @@ export default function TimeIn() {
         const diffMs = timeOut.getTime() - timeIn.getTime();
         let totalHours = diffMs / (1000 * 60 * 60);
         
-        // Deduct 1 hour break if they worked more than 5 hours
         if (totalHours > 5) totalHours -= 1;
         
         const overtimeMinutes = totalHours > 8 ? Math.round((totalHours - 8) * 60) : 0;
@@ -167,7 +166,7 @@ export default function TimeIn() {
           }).eq("id", existing.id);
           
         if (error) { toast.error(error.message); return; }
-        toast.success(`✓ ${emp.first_name}, TIME OUT recorded. Hours: ${totalHours.toFixed(2)}`);
+        toast.success(`${emp.first_name} Successfully timed out!`);
       }
       setCode("");
     } finally {

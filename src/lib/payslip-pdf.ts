@@ -175,19 +175,122 @@ function renderPayslip(doc: jsPDF, p: PayslipData, y: number) {
 }
 
 export function generatePayslipsPDF(payslips: PayslipData[]): jsPDF {
-  // Letter portrait: 8.5 x 11. Two payslips per page (top + bottom).
-  const doc = new jsPDF({ orientation: "portrait", unit: "in", format: "letter" });
-  for (let i = 0; i < payslips.length; i++) {
-    const slotOnPage = i % 2;
-    if (i > 0 && slotOnPage === 0) doc.addPage();
-    const y = slotOnPage === 0 ? 0.3 : 5.6;
-    renderPayslip(doc, payslips[i], y);
-    // Cut line between slots
-    if (slotOnPage === 0) {
-      doc.setLineDashPattern([0.05, 0.05], 0);
-      doc.line(0.3, 5.5, 8.2, 5.5);
-      doc.setLineDashPattern([], 0);
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  });
+
+  const slipsPerPage = 2;
+  const slipHeight = 140;
+
+  payslips.forEach((payslip, index) => {
+    if (index > 0 && index % slipsPerPage === 0) {
+      doc.addPage();
     }
-  }
+
+    const yOffset = (index % slipsPerPage) * slipHeight + 10;
+
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(payslip.companyName, 105, yOffset, { align: "center" });
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text("PAYSLIP", 105, yOffset + 6, { align: "center" });
+
+    // Period Details
+    doc.setFontSize(9);
+    doc.text(`Period: ${payslip.periodStart} to ${payslip.periodEnd}`, 15, yOffset + 14);
+    doc.text(`Payout Date: ${payslip.paymentDate}`, 15, yOffset + 19);
+
+    // Employee Details
+    doc.text(`Employee Code: ${payslip.employeeCode}`, 110, yOffset + 14);
+    doc.text(`Name: ${payslip.employeeName}`, 110, yOffset + 19);
+    doc.text(`Department: ${payslip.department}`, 110, yOffset + 24);
+
+    // Border line
+    doc.setDrawColor(200);
+    doc.line(15, yOffset + 28, 195, yOffset + 28);
+
+    // Setup Table Columns
+    const leftColX = 15;
+    const rightColX = 105;
+    let currY = yOffset + 35;
+
+    // Left Column: EARNINGS
+    doc.setFont("helvetica", "bold");
+    doc.text("EARNINGS", leftColX, currY);
+    currY += 7;
+    doc.setFont("helvetica", "normal");
+    
+    // Earnings entries
+    doc.text("Basic Salary", leftColX, currY);
+    doc.text(formatCurrency(payslip.basicSalary), 85, currY, { align: "right" });
+    currY += 6;
+    
+    doc.text("Daily Rate", leftColX, currY);
+    doc.text(formatCurrency(payslip.dailyRate || 0), 85, currY, { align: "right" });
+    currY += 6;
+
+    // Right Column: DEDUCTIONS (aligned with Earnings Y)
+    let rightY = yOffset + 35;
+    doc.setFont("helvetica", "bold");
+    doc.text("DEDUCTIONS", rightColX, rightY);
+    rightY += 7;
+    doc.setFont("helvetica", "normal");
+
+    // Govt Deductions
+    doc.text("SSS", rightColX, rightY);
+    doc.text(formatCurrency(payslip.sss), 195, rightY, { align: "right" });
+    rightY += 6;
+
+    doc.text("PhilHealth", rightColX, rightY);
+    doc.text(formatCurrency(payslip.phic), 195, rightY, { align: "right" });
+    rightY += 6;
+
+    doc.text("Pag-IBIG", rightColX, rightY);
+    doc.text(formatCurrency(payslip.hdmf), 195, rightY, { align: "right" });
+    rightY += 6;
+
+    // Loans / Cash Advance
+    doc.text("Cash Advance", rightColX, rightY);
+    doc.text(formatCurrency(payslip.cashAdvance || 0), 195, rightY, { align: "right" });
+    rightY += 6;
+
+    // Gross and Net summary box
+    currY = Math.max(currY, rightY) + 10;
+    doc.line(15, currY, 195, currY);
+    currY += 8;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("NET PAY:", 15, currY);
+    doc.text(formatCurrency(payslip.netPay), 85, currY, { align: "right" });
+    
+    // Footer Signatures
+    currY += 25;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    
+    doc.text("Prepared By:", 15, currY);
+    doc.line(15, currY + 6, 65, currY + 6);
+
+    doc.text("Approved By:", 105, currY);
+    doc.line(105, currY + 6, 155, currY + 6);
+
+    doc.text("Received By:", 15, currY + 20);
+    doc.line(15, currY + 26, 65, currY + 26);
+
+    // Separator between slips
+    if (index % slipsPerPage === 0 && index < payslips.length - 1) {
+      doc.setDrawColor(150);
+      doc.setLineDash([2, 2], 0);
+      doc.line(15, yOffset + slipHeight - 5, 195, yOffset + slipHeight - 5);
+      doc.setLineDash([], 0);
+    }
+  });
+
   return doc;
 }

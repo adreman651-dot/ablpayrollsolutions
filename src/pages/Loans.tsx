@@ -7,10 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Check, X } from "lucide-react";
+import { Plus, Check, X, FileSpreadsheet, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/payroll-utils";
 import { useAuth } from "@/hooks/useAuth";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface Loan {
   id: string;
@@ -18,6 +21,7 @@ interface Loan {
   loan_type: string;
   principal_amount: number;
   monthly_amortization: number;
+  per_cutoff_amortization: number;
   total_paid: number;
   remaining_balance: number;
   status: string;
@@ -35,7 +39,7 @@ export default function Loans() {
   const [employees, setEmployees] = useState<{ id: string; first_name: string; last_name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ employee_id: "", loan_type: "", principal_amount: 0, monthly_amortization: 0 });
+  const [form, setForm] = useState({ employee_id: "", loan_type: "", principal_amount: 0, monthly_amortization: 0, per_cutoff_amortization: 0 });
 
   const fetchData = async () => {
     const [loansRes, empRes] = await Promise.all([
@@ -58,10 +62,11 @@ export default function Loans() {
       employee_id: empId, loan_type: form.loan_type,
       principal_amount: form.principal_amount,
       monthly_amortization: form.monthly_amortization,
+      per_cutoff_amortization: form.per_cutoff_amortization,
       remaining_balance: form.principal_amount,
     });
     if (error) toast.error(error.message);
-    else { toast.success("Loan application submitted"); setDialogOpen(false); setForm({ employee_id: "", loan_type: "", principal_amount: 0, monthly_amortization: 0 }); fetchData(); }
+    else { toast.success("Loan application submitted"); setDialogOpen(false); setForm({ employee_id: "", loan_type: "", principal_amount: 0, monthly_amortization: 0, per_cutoff_amortization: 0 }); fetchData(); }
   };
 
   const updateStatus = async (id: string, status: string) => {
@@ -72,6 +77,45 @@ export default function Loans() {
     else { toast.success(`Loan ${status}`); fetchData(); }
   };
 
+  const exportExcel = () => {
+    const data = loans.map(l => ({
+      "Employee": l.employees ? `${l.employees.first_name} ${l.employees.last_name}` : "—",
+      "Type": l.loan_type,
+      "Principal": l.principal_amount,
+      "Monthly Amort.": l.monthly_amortization,
+      "Per Cut-off Amort.": l.per_cutoff_amortization,
+      "Total Paid": l.total_paid,
+      "Balance": l.remaining_balance,
+      "Status": l.status
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Loans");
+    XLSX.writeFile(wb, "loan_balances.xlsx");
+    toast.success("Exported to Excel");
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.text("Loan Balances Report", 14, 20);
+    autoTable(doc, {
+      startY: 25,
+      head: [["Employee", "Type", "Principal", "Monthly", "Per Cut-off", "Paid", "Balance", "Status"]],
+      body: loans.map(l => [
+        l.employees ? `${l.employees.first_name} ${l.employees.last_name}` : "—",
+        l.loan_type,
+        l.principal_amount.toLocaleString(),
+        l.monthly_amortization.toLocaleString(),
+        l.per_cutoff_amortization.toLocaleString(),
+        l.total_paid.toLocaleString(),
+        l.remaining_balance.toLocaleString(),
+        l.status.toUpperCase()
+      ]),
+    });
+    doc.save("loan_balances.pdf");
+    toast.success("Exported to PDF");
+  };
+
   return (
     <div>
       <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -79,47 +123,64 @@ export default function Loans() {
           <h1 className="page-title">Loan Management</h1>
           <p className="page-description">Track employee loans and deductions</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="w-4 h-4 mr-2" />Apply Loan</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Loan Application</DialogTitle></DialogHeader>
-            <div className="space-y-4 mt-4">
-              {canApprove && (
+        <div className="flex gap-2">
+          {canApprove && (
+            <>
+              <Button variant="outline" size="sm" onClick={exportExcel}><FileSpreadsheet className="w-4 h-4 mr-2" />Excel</Button>
+              <Button variant="outline" size="sm" onClick={exportPDF}><FileText className="w-4 h-4 mr-2" />PDF</Button>
+            </>
+          )}
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button><Plus className="w-4 h-4 mr-2" />Apply Loan</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Loan Application</DialogTitle></DialogHeader>
+              <div className="space-y-4 mt-4">
+                {canApprove && (
+                  <div className="space-y-2">
+                    <Label>Employee</Label>
+                    <Select value={form.employee_id} onValueChange={v => setForm({ ...form, employee_id: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                      <SelectContent>
+                        {employees.map(e => (
+                          <SelectItem key={e.id} value={e.id}>{e.first_name} {e.last_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  <Label>Employee</Label>
-                  <Select value={form.employee_id} onValueChange={v => setForm({ ...form, employee_id: v })}>
-                    <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                  <Label>Loan Type</Label>
+                  <Select value={form.loan_type} onValueChange={v => setForm({ ...form, loan_type: v })}>
+                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                     <SelectContent>
-                      {employees.map(e => (
-                        <SelectItem key={e.id} value={e.id}>{e.first_name} {e.last_name}</SelectItem>
-                      ))}
+                      {loanTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-              )}
-              <div className="space-y-2">
-                <Label>Loan Type</Label>
-                <Select value={form.loan_type} onValueChange={v => setForm({ ...form, loan_type: v })}>
-                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                  <SelectContent>
-                    {loanTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <Label>Principal Amount (₱)</Label>
+                  <Input type="number" value={form.principal_amount} onChange={e => setForm({ ...form, principal_amount: parseFloat(e.target.value) || 0 })} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Monthly Amortization (₱)</Label>
+                    <Input type="number" value={form.monthly_amortization} onChange={e => {
+                      const m = parseFloat(e.target.value) || 0;
+                      setForm({ ...form, monthly_amortization: m, per_cutoff_amortization: +(m/2).toFixed(2) });
+                    }} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Per Cut-off Amortization (₱)</Label>
+                    <Input type="number" value={form.per_cutoff_amortization} onChange={e => setForm({ ...form, per_cutoff_amortization: parseFloat(e.target.value) || 0 })} />
+                  </div>
+                </div>
+                <Button onClick={handleApply} className="w-full">Submit Application</Button>
               </div>
-              <div className="space-y-2">
-                <Label>Principal Amount (₱)</Label>
-                <Input type="number" value={form.principal_amount} onChange={e => setForm({ ...form, principal_amount: parseFloat(e.target.value) || 0 })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Monthly Amortization (₱)</Label>
-                <Input type="number" value={form.monthly_amortization} onChange={e => setForm({ ...form, monthly_amortization: parseFloat(e.target.value) || 0 })} />
-              </div>
-              <Button onClick={handleApply} className="w-full">Submit Application</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -130,6 +191,7 @@ export default function Loans() {
               <TableHead>Type</TableHead>
               <TableHead>Principal</TableHead>
               <TableHead>Monthly</TableHead>
+              <TableHead>Per Cut-off</TableHead>
               <TableHead>Paid</TableHead>
               <TableHead>Balance</TableHead>
               <TableHead>Status</TableHead>
@@ -138,9 +200,9 @@ export default function Loans() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
             ) : loans.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">No loan records</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">No loan records</TableCell></TableRow>
             ) : loans.map(l => (
               <TableRow key={l.id}>
                 <TableCell className="font-medium">
@@ -149,6 +211,7 @@ export default function Loans() {
                 <TableCell>{l.loan_type}</TableCell>
                 <TableCell>{formatCurrency(l.principal_amount)}</TableCell>
                 <TableCell>{formatCurrency(l.monthly_amortization)}</TableCell>
+                <TableCell>{formatCurrency(l.per_cutoff_amortization || 0)}</TableCell>
                 <TableCell>{formatCurrency(l.total_paid)}</TableCell>
                 <TableCell>{formatCurrency(l.remaining_balance)}</TableCell>
                 <TableCell>

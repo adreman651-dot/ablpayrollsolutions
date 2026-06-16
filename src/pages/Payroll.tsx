@@ -70,11 +70,9 @@ export default function Payroll() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewItems, setViewItems] = useState<PayrollItem[]>([]);
   const [viewingRun, setViewingRun] = useState<PayrollRun | null>(null);
-  const [form, setForm] = useState({ period_start: "", period_end: "" });
-  const [processing, setProcessing] = useState(false);
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number }>>({});
-  const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
-  const [savingOverrides, setSavingOverrides] = useState(false);
+  const [form, setForm] = useState({ period_start: "", period_end: "", run_date: "", cutoff_type: "15th" });
+  const [autoGen, setAutoGen] = useState({ month: new Date().toISOString().slice(0, 7), cycle: "1st" });
+  const [cutoffSettings, setCutoffSettings] = useState({ daysBefore: 3, skipWeekends: false });
 
   const fetchRuns = async () => {
     const { data, error } = await supabase.from("payroll_runs").select("*").order("created_at", { ascending: false });
@@ -83,32 +81,85 @@ export default function Payroll() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchRuns(); }, []);
+  const fetchSettings = async () => {
+    const { data } = await supabase.from("system_settings").select("key, value").in("key", ["cutoff_days_before_payout", "cutoff_skip_weekends"]);
+    if (data) {
+      const db = parseInt(data.find(d => d.key === "cutoff_days_before_payout")?.value || "3", 10);
+      const sw = data.find(d => d.key === "cutoff_skip_weekends")?.value === "true";
+      setCutoffSettings({ daysBefore: db, skipWeekends: sw });
+    }
+  };
+
+  useEffect(() => { fetchRuns(); fetchSettings(); }, []);
+
+  // Compute Auto Dates
+  useEffect(() => {
+    if (!autoGen.month) return;
+    const [yearStr, monthStr] = autoGen.month.split("-");
+    const y = parseInt(yearStr, 10);
+    const m = parseInt(monthStr, 10) - 1;
+
+    let releaseDate: Date;
+    let startDate: Date;
+    let endDate: Date;
+
+    const adjustForWeekend = (d: Date) => {
+      if (!cutoffSettings.skipWeekends) return d;
+      const day = d.getDay();
+      if (day === 6) d.setDate(d.getDate() - 1); // Sat -> Fri
+      else if (day === 0) d.setDate(d.getDate() - 2); // Sun -> Fri
+      return d;
+    };
+
+    if (autoGen.cycle === "1st") {
+      releaseDate = new Date(y, m, 15);
+      startDate = new Date(y, m, 1);
+      endDate = new Date(y, m, 15 - cutoffSettings.daysBefore);
+      endDate = adjustForWeekend(endDate);
+    } else {
+      // Last day of month
+      releaseDate = new Date(y, m + 1, 0); 
+      // Start date is day after 1st cycle end date. We must recalculate 1st cycle end date.
+      let firstCycleEnd = new Date(y, m, 15 - cutoffSettings.daysBefore);
+      firstCycleEnd = adjustForWeekend(firstCycleEnd);
+      startDate = new Date(firstCycleEnd);
+      startDate.setDate(startDate.getDate() + 1);
+      endDate = new Date(y, m + 1, 0);
+      endDate.setDate(endDate.getDate() - cutoffSettings.daysBefore);
+      endDate = adjustForWeekend(endDate);
+    }
+
+    setForm({
+      period_start: startDate.toISOString().split("T")[0],
+      period_end: endDate.toISOString().split("T")[0],
+      run_date: releaseDate.toISOString().split("T")[0],
+      cutoff_type: autoGen.cycle === "1st" ? "15th" : "30th"
+    });
+  }, [autoGen.month, autoGen.cycle, cutoffSettings]);
 
   const createRun = async () => {
-    if (!form.period_start || !form.period_end) { toast.error("Select period dates"); return; }
+    if (!form.period_start || !form.period_end || !form.run_date) { toast.error("Select period dates"); return; }
     const dup = runs.find(r => r.period_start === form.period_start && r.period_end === form.period_end);
     if (dup) { toast.error("A payroll run for this exact period already exists"); return; }
     const { error } = await supabase.from("payroll_runs").insert({
-      period_start: form.period_start, period_end: form.period_end, created_by: user?.id,
+      period_start: form.period_start, period_end: form.period_end, run_date: form.run_date,
+      created_by: user?.id, cutoff_type: form.cutoff_type
     });
     if (error) toast.error(error.message);
     else {
       toast.success("Payroll run created");
       setDialogOpen(false);
-      setForm({ period_start: "", period_end: "" });
       fetchRuns();
     }
   };
 
-  // Compute employee effective daily rate based on payroll_type
   function getEffectiveDailyRate(basicSalary: number, payrollType: string | null): number {
     if (payrollType === "daily_rate") return basicSalary;
     if (payrollType === "hourly_rate") return basicSalary * 8;
-    return computeDailyRate(basicSalary); // monthly_rate default
+    return computeDailyRate(basicSalary);
   }
 
-  const processRun = async (run: PayrollRun) => {
+  const processRun = async (run: PayrollRun & { cutoff_type?: string }) => {
     if (run.status === "completed") {
       if (!confirm("This run is already completed. Re-process and overwrite?")) return;
     }
@@ -119,7 +170,7 @@ export default function Payroll() {
       const pagibigOverrides = { employee: pagibigMap.pagibig_employee || 400, employer: pagibigMap.pagibig_employer || 400 };
 
       const { data: employees, error: empErr } = await supabase.from("employees")
-        .select("id, basic_salary, employee_code, payroll_type").eq("employment_status", "active");
+        .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule").eq("employment_status", "active");
       if (empErr) throw empErr;
       if (!employees?.length) { toast.error("No active employees"); return; }
 
@@ -127,6 +178,7 @@ export default function Payroll() {
       const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
       const workingDaysInPeriod = Math.min(totalDays, WORKING_DAYS_PER_MONTH);
       const cycleFactor = totalDays < 20 ? 0.5 : 1;
+      const currentCutoff = run.cutoff_type || "both"; // '15th', '30th', or 'both'
 
       const items = [];
 
@@ -141,7 +193,6 @@ export default function Payroll() {
         const daysPresent = (attendance || []).filter(a => a.status === "present" || a.status === "late").length;
         const absences = Math.max(0, workingDaysInPeriod - daysPresent);
 
-        // Fetch approved leaves for the period (use leave credits first)
         const { data: leaveData } = await supabase.from("leaves")
           .select("duration")
           .eq("employee_id", emp.id)
@@ -153,40 +204,55 @@ export default function Payroll() {
         const dailyRate = getEffectiveDailyRate(emp.basic_salary, emp.payroll_type);
         const hourlyRate = dailyRate / 8;
 
-        // Gross = (days_present + leave_days) × daily_rate
         const effectiveDays = daysPresent + leaveDays;
-        const basicPay = dailyRate * effectiveDays;
+        
+        let basicPay = dailyRate * effectiveDays;
+        let absenceDeductions = 0;
+        let lateDeductions = 0;
 
-        // Absences that are NOT covered by leave
-        const unpaidAbsences = Math.max(0, absences - leaveDays);
-        const absenceDeductions = unpaidAbsences * dailyRate;
-        const lateDeductions = (totalLateMinutes / 60) * hourlyRate;
+        if (emp.payroll_type === "daily_rate" || emp.payroll_type === "hourly_rate") {
+            // No time in means basic pay naturally 0
+            if (daysPresent === 0 && leaveDays === 0) {
+                basicPay = 0;
+            }
+        } else {
+            // Monthly rate logic
+            const unpaidAbsences = Math.max(0, absences - leaveDays);
+            absenceDeductions = unpaidAbsences * dailyRate;
+            lateDeductions = (totalLateMinutes / 60) * hourlyRate;
+            basicPay = (emp.basic_salary * cycleFactor);
+        }
 
-        // Government contributions (pro-rated per cycle)
+        const grossPay = +basicPay.toFixed(2);
+
         const monthlySalary = emp.payroll_type === "daily_rate"
           ? emp.basic_salary * WORKING_DAYS_PER_MONTH
           : emp.payroll_type === "hourly_rate"
           ? emp.basic_salary * 8 * WORKING_DAYS_PER_MONTH
           : emp.basic_salary;
 
+        // Check if deduction schedules match current run cutoff
+        const shouldDeductSSS = emp.sss_schedule === "both" || emp.sss_schedule === currentCutoff;
+        const shouldDeductPHIC = emp.phic_schedule === "both" || emp.phic_schedule === currentCutoff;
+        const shouldDeductHDMF = emp.hdmf_schedule === "both" || emp.hdmf_schedule === currentCutoff;
+
         const sss = computeSSS(monthlySalary);
         const ph = computePhilHealth(monthlySalary);
         const pi = computePagIBIG(monthlySalary, pagibigOverrides);
 
-        const sssEE = +(sss.employee * cycleFactor).toFixed(2);
-        const phEE = +(ph.employee * cycleFactor).toFixed(2);
-        const piEE = +(pi.employee * cycleFactor).toFixed(2);
+        const sssEE = shouldDeductSSS ? +(sss.employee * cycleFactor).toFixed(2) : 0;
+        const phEE = shouldDeductPHIC ? +(ph.employee * cycleFactor).toFixed(2) : 0;
+        const piEE = shouldDeductHDMF ? +(pi.employee * cycleFactor).toFixed(2) : 0;
 
-        const grossPay = +basicPay.toFixed(2);
-        const taxableIncome = Math.max(0, grossPay - sssEE - phEE - piEE);
+        const taxableIncome = Math.max(0, grossPay - absenceDeductions - lateDeductions - sssEE - phEE - piEE);
         const tax = computeWithholdingTax(taxableIncome);
 
         const { data: loans } = await supabase.from("loans")
-          .select("monthly_amortization").eq("employee_id", emp.id).eq("status", "approved");
-        const loanDeductions = +((loans || []).reduce((sum, l) => sum + (l.monthly_amortization || 0), 0) * cycleFactor).toFixed(2);
+          .select("per_cutoff_amortization").eq("employee_id", emp.id).eq("status", "approved");
+        const loanDeductions = +((loans || []).reduce((sum, l) => sum + (l.per_cutoff_amortization || 0), 0)).toFixed(2);
 
         const totalDeductions = +(lateDeductions + absenceDeductions + sssEE + phEE + piEE + tax + loanDeductions).toFixed(2);
-        const netPay = Math.max(0, grossPay - totalDeductions); // prevent negative net pay
+        const netPay = Math.max(0, grossPay - totalDeductions);
 
         items.push({
           payroll_run_id: run.id,
@@ -199,8 +265,8 @@ export default function Payroll() {
           philhealth_contribution: phEE,
           pagibig_contribution: piEE,
           withholding_tax: +tax.toFixed(2),
-          loan_deductions: loanDeductions,
-          cash_advance: 0,
+          loan_deductions: 0, // Using cash advance instead for loans
+          cash_advance: loanDeductions,
           other_deductions: 0,
           total_deductions: totalDeductions,
           net_pay: +netPay.toFixed(2),
@@ -230,7 +296,6 @@ export default function Payroll() {
     setViewItems(items);
     setViewingRun(run);
 
-    // Initialize override state
     const initOverrides: Record<string, ManualOverride> = {};
     items.forEach((item: PayrollItem) => {
       initOverrides[item.employee_id] = {
@@ -241,7 +306,6 @@ export default function Payroll() {
     });
     setOverrides(initOverrides);
 
-    // Fetch attendance summary
     const empIds = items.map((d: any) => d.employee_id);
     if (empIds.length) {
       const { data: att } = await supabase.from("attendance")
@@ -262,7 +326,6 @@ export default function Payroll() {
     }
   };
 
-  // Save manual deduction overrides (cash advance + other deductions)
   const saveOverrides = async () => {
     if (!viewingRun) return;
     setSavingOverrides(true);
@@ -273,7 +336,7 @@ export default function Payroll() {
         const ca = ov.cash_advance || 0;
         const od = ov.other_deductions || 0;
         const baseDed = item.sss_contribution + item.philhealth_contribution + item.pagibig_contribution +
-          item.withholding_tax + item.loan_deductions + item.late_deductions + item.absence_deductions;
+          item.withholding_tax + item.late_deductions + item.absence_deductions;
         const totalDed = +(baseDed + ca + od).toFixed(2);
         const netPay = Math.max(0, item.gross_pay - totalDed);
         await supabase.from("payroll_items").update({
@@ -317,7 +380,7 @@ export default function Payroll() {
         hdmf: item.pagibig_contribution,
         tax: item.withholding_tax,
         cash_advance: item.cash_advance || 0,
-        other_deductions: (item.other_deductions || 0) + (item.loan_deductions || 0) + (item.late_deductions || 0) + (item.absence_deductions || 0),
+        other_deductions: (item.other_deductions || 0) + (item.late_deductions || 0) + (item.absence_deductions || 0),
         net_pay: item.net_pay,
       };
     });
@@ -330,30 +393,10 @@ export default function Payroll() {
     const { data: cn } = await supabase.from("system_settings").select("value").eq("key", "company_name").maybeSingle();
     const companyName = cn?.value || "ABL PAYROLL SOLUTIONS";
 
-    const empIds = viewItems.map(i => i.employee_id);
-    const { data: att } = await supabase.from("attendance")
-      .select("employee_id, date, time_in, time_out, status")
-      .in("employee_id", empIds)
-      .gte("date", viewingRun.period_start)
-      .lte("date", viewingRun.period_end)
-      .order("date", { ascending: true });
-
-    const wdMap: Record<string, { date: string; hours: number }[]> = {};
-    (att || []).forEach(a => {
-      const arr = wdMap[a.employee_id] || [];
-      let hours = 0;
-      if (a.time_in && a.time_out) {
-        hours = Math.max(0, Math.min(8, (new Date(a.time_out).getTime() - new Date(a.time_in).getTime()) / 3600000));
-      } else if (a.status === "present" || a.status === "late") hours = 8;
-      arr.push({ date: new Date(a.date).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" }), hours });
-      wdMap[a.employee_id] = arr;
-    });
-
     const payslips: PayslipData[] = viewItems.map(item => {
       const e = item.employees!;
       const attInfo = attendanceMap[item.employee_id] || { days: 0 };
-      const wd = wdMap[item.employee_id] || [];
-      const hoursWorked = wd.reduce((s, w) => s + w.hours, 0);
+      const dailyRate = getEffectiveDailyRate(e.basic_salary, e.payroll_type);
       return {
         companyName,
         paymentDate: new Date(viewingRun.run_date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
@@ -362,10 +405,10 @@ export default function Payroll() {
         employeeCode: e.employee_code,
         employeeName: `${e.last_name}, ${e.first_name}`,
         department: e.department || "—",
-        location: "Office",
         basicSalary: e.basic_salary,
+        dailyRate: dailyRate,
         daysWorked: attInfo.days,
-        hoursWorked,
+        hoursWorked: attInfo.days * 8,
         straightTime: item.basic_pay,
         holidayPay: item.holiday_pay || 0,
         totalTaxable: item.gross_pay,
@@ -373,14 +416,13 @@ export default function Payroll() {
         phic: item.philhealth_contribution,
         sss: item.sss_contribution,
         netTaxable: item.gross_pay - item.pagibig_contribution - item.philhealth_contribution - item.sss_contribution - item.withholding_tax,
-        otherDeductions: (item.other_deductions || 0) + (item.loan_deductions || 0),
+        otherDeductions: (item.other_deductions || 0),
         totalDeductions: item.total_deductions,
-        riceAllowance: item.allowances ? item.allowances / 2 : 0,
-        riceAllowance2: 0,
+        cashAdvance: item.cash_advance || 0,
         totalNonTaxable: item.allowances || 0,
         netPay: item.net_pay,
         ytdIncomeTxNtx: 0, ytdIncomeTx: 0, ytdIncomeNtx: 0, ytd13thMonth: 0,
-        workDetails: wd,
+        workDetails: [],
       };
     });
 
@@ -396,7 +438,7 @@ export default function Payroll() {
     hdmf: acc.hdmf + item.pagibig_contribution,
     tax: acc.tax + item.withholding_tax,
     ca: acc.ca + (item.cash_advance || 0),
-    other: acc.other + (item.other_deductions || 0) + (item.loan_deductions || 0) + (item.late_deductions || 0) + (item.absence_deductions || 0),
+    other: acc.other + (item.other_deductions || 0) + (item.late_deductions || 0) + (item.absence_deductions || 0),
     net: acc.net + item.net_pay,
   }), { gross: 0, sss: 0, ph: 0, hdmf: 0, tax: 0, ca: 0, other: 0, net: 0 });
 
@@ -412,13 +454,48 @@ export default function Payroll() {
             <Button><Plus className="w-4 h-4 mr-2" />New Payroll Run</Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader><DialogTitle>Create Payroll Run</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Create Auto Payroll Run</DialogTitle></DialogHeader>
             <div className="space-y-4 mt-4">
-              <div className="space-y-2"><Label>Period Start</Label>
-                <Input type="date" value={form.period_start} onChange={e => setForm({ ...form, period_start: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Period End</Label>
-                <Input type="date" value={form.period_end} onChange={e => setForm({ ...form, period_end: e.target.value })} /></div>
-              <Button onClick={createRun} className="w-full">Create Run</Button>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Month</Label>
+                  <Input type="month" value={autoGen.month} onChange={e => setAutoGen({ ...autoGen, month: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cycle</Label>
+                  <Select value={autoGen.cycle} onValueChange={v => setAutoGen({ ...autoGen, cycle: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1st">1st Period (15th Payout)</SelectItem>
+                      <SelectItem value="2nd">2nd Period (End of Month)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="bg-muted p-3 rounded-lg text-sm space-y-1">
+                <p><strong>Cut-off rule:</strong> {cutoffSettings.daysBefore} days before payout</p>
+                <p><strong>Skip weekends:</strong> {cutoffSettings.skipWeekends ? "Yes" : "No"}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">
+                <div className="space-y-2"><Label>Period Start</Label>
+                  <Input type="date" value={form.period_start} onChange={e => setForm({ ...form, period_start: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Period End</Label>
+                  <Input type="date" value={form.period_end} onChange={e => setForm({ ...form, period_end: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Release/Run Date</Label>
+                  <Input type="date" value={form.run_date} onChange={e => setForm({ ...form, run_date: e.target.value })} /></div>
+                <div className="space-y-2">
+                  <Label>Cut-off Deduction Sync</Label>
+                  <Select value={form.cutoff_type} onValueChange={v => setForm({ ...form, cutoff_type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="15th">15th Deductions</SelectItem>
+                      <SelectItem value="30th">30th Deductions</SelectItem>
+                      <SelectItem value="both">Both Deductions</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <Button onClick={createRun} className="w-full mt-2">Generate Payroll Run</Button>
             </div>
           </DialogContent>
         </Dialog>
