@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Search, Edit, UserX, UserCheck } from "lucide-react";
 import { toast } from "sonner";
-import { formatCurrency, computeAllDeductions } from "@/lib/payroll-utils";
+import { formatCurrency, computeAllDeductions, WORKING_DAYS_PER_MONTH } from "@/lib/payroll-utils";
 import { useAuth } from "@/hooks/useAuth";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EmployeeFormDialog from "@/components/employees/EmployeeFormDialog";
@@ -29,13 +29,30 @@ interface Employee {
   philhealth_number: string | null;
   pagibig_number: string | null;
   tin_number: string | null;
+  payroll_type: string | null;
 }
 
 const emptyForm = {
   first_name: "", last_name: "", middle_name: "", email: "", phone: "",
-  department: "", job_title: "", basic_salary: 0, hire_date: new Date().toISOString().split("T")[0],
-  sss_number: "", philhealth_number: "", pagibig_number: "", tin_number: "", employment_status: "active",
+  department: "", job_title: "", basic_salary: 0,
+  hire_date: new Date().toISOString().split("T")[0],
+  sss_number: "", philhealth_number: "", pagibig_number: "", tin_number: "",
+  employment_status: "active", payroll_type: "monthly_rate",
 };
+
+function payrollTypeLabel(type: string | null): string {
+  switch (type) {
+    case "daily_rate": return "Daily";
+    case "hourly_rate": return "Hourly";
+    default: return "Monthly";
+  }
+}
+
+function getDailyRate(emp: Employee): number {
+  if (emp.payroll_type === "daily_rate") return emp.basic_salary;
+  if (emp.payroll_type === "hourly_rate") return emp.basic_salary * 8;
+  return emp.basic_salary / WORKING_DAYS_PER_MONTH;
+}
 
 export default function Employees() {
   const { isAdminOrHR } = useAuth();
@@ -58,7 +75,7 @@ export default function Employees() {
 
   const fetchPagibigSettings = async () => {
     const { data } = await supabase.from("system_settings").select("key, value").in("key", ["pagibig_employee", "pagibig_employer"]);
-    if (data && data.length === 2) {
+    if (data && data.length >= 2) {
       const map = Object.fromEntries(data.map(d => [d.key, parseFloat(d.value)]));
       setPagibigSettings({ employee: map.pagibig_employee || 400, employer: map.pagibig_employer || 400 });
     }
@@ -69,21 +86,26 @@ export default function Employees() {
   const handleSave = async () => {
     try {
       const payload = {
-        first_name: form.first_name, last_name: form.last_name, middle_name: form.middle_name || null,
-        email: form.email || null, phone: form.phone || null, department: form.department || null,
-        job_title: form.job_title || null, basic_salary: form.basic_salary, hire_date: form.hire_date,
-        sss_number: form.sss_number || null, philhealth_number: form.philhealth_number || null,
-        pagibig_number: form.pagibig_number || null, tin_number: form.tin_number || null,
+        first_name: form.first_name, last_name: form.last_name,
+        middle_name: form.middle_name || null, email: form.email || null,
+        phone: form.phone || null, department: form.department || null,
+        job_title: form.job_title || null, basic_salary: form.basic_salary,
+        hire_date: form.hire_date,
+        sss_number: form.sss_number || null,
+        philhealth_number: form.philhealth_number || null,
+        pagibig_number: form.pagibig_number || null,
+        tin_number: form.tin_number || null,
         employment_status: form.employment_status,
+        payroll_type: form.payroll_type || "monthly_rate",
       };
       if (editing) {
         const { error } = await supabase.from("employees").update(payload).eq("id", editing.id);
         if (error) throw error;
-        toast.success("Employee updated");
+        toast.success("Employee updated successfully");
       } else {
         const { error } = await supabase.from("employees").insert({ ...payload, employee_code: "" });
         if (error) throw error;
-        toast.success("Employee added");
+        toast.success("Employee added successfully");
       }
       setDialogOpen(false);
       setEditing(null);
@@ -104,12 +126,15 @@ export default function Employees() {
   const openEdit = (emp: Employee) => {
     setEditing(emp);
     setForm({
-      first_name: emp.first_name, last_name: emp.last_name, middle_name: emp.middle_name || "",
-      email: emp.email || "", phone: emp.phone || "", department: emp.department || "",
-      job_title: emp.job_title || "", basic_salary: emp.basic_salary, hire_date: emp.hire_date,
+      first_name: emp.first_name, last_name: emp.last_name,
+      middle_name: emp.middle_name || "", email: emp.email || "",
+      phone: emp.phone || "", department: emp.department || "",
+      job_title: emp.job_title || "", basic_salary: emp.basic_salary,
+      hire_date: emp.hire_date,
       sss_number: emp.sss_number || "", philhealth_number: emp.philhealth_number || "",
       pagibig_number: emp.pagibig_number || "", tin_number: emp.tin_number || "",
       employment_status: emp.employment_status,
+      payroll_type: emp.payroll_type || "monthly_rate",
     });
     setDialogOpen(true);
   };
@@ -129,7 +154,7 @@ export default function Employees() {
       <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="page-title">Employees</h1>
-          <p className="page-description">{employees.length} total employees</p>
+          <p className="page-description">{employees.length} total · {employees.filter(e => e.employment_status === "active").length} active</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative">
@@ -168,8 +193,8 @@ export default function Employees() {
                 <TableHead>Code</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Department</TableHead>
-                <TableHead>Position</TableHead>
-                <TableHead>Salary</TableHead>
+                <TableHead>Payroll Type</TableHead>
+                <TableHead className="text-right">Basic Salary</TableHead>
                 <TableHead>Status</TableHead>
                 {isAdminOrHR() && <TableHead className="w-24">Actions</TableHead>}
               </TableRow>
@@ -187,10 +212,24 @@ export default function Employees() {
                     onClick={() => setSelectedEmployee(emp)}
                   >
                     <TableCell className="font-mono text-sm">{emp.employee_code}</TableCell>
-                    <TableCell className="font-medium">{emp.first_name} {emp.last_name}</TableCell>
+                    <TableCell>
+                      <div className="font-medium">{emp.last_name}, {emp.first_name}</div>
+                      <div className="text-xs text-muted-foreground">{emp.job_title || "—"}</div>
+                    </TableCell>
                     <TableCell>{emp.department || "—"}</TableCell>
-                    <TableCell>{emp.job_title || "—"}</TableCell>
-                    <TableCell>{formatCurrency(emp.basic_salary)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {payrollTypeLabel(emp.payroll_type)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div>{formatCurrency(emp.basic_salary)}</div>
+                      {emp.payroll_type !== "monthly_rate" && (
+                        <div className="text-xs text-muted-foreground">
+                          Daily: {formatCurrency(getDailyRate(emp))}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={emp.employment_status === "active" ? "default" : "secondary"}>
                         {emp.employment_status}
@@ -220,41 +259,42 @@ export default function Employees() {
           <h3 className="text-lg font-semibold mb-4">Government Deductions Preview</h3>
           {selectedEmployee && deductions ? (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">{selectedEmployee.first_name} {selectedEmployee.last_name}</span>
-                <br />Basic Salary: {formatCurrency(selectedEmployee.basic_salary)}
-              </p>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>SSS (EE)</span><span>{formatCurrency(deductions.sss.employee)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>SSS (ER)</span><span className="text-muted-foreground">{formatCurrency(deductions.sss.employer)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>SSS EC</span><span className="text-muted-foreground">{formatCurrency(deductions.sss.ec)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>PhilHealth (EE)</span><span>{formatCurrency(deductions.philhealth.employee)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>PhilHealth (ER)</span><span className="text-muted-foreground">{formatCurrency(deductions.philhealth.employer)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>Pag-IBIG (EE)</span><span>{formatCurrency(deductions.pagibig.employee)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>Pag-IBIG (ER)</span><span className="text-muted-foreground">{formatCurrency(deductions.pagibig.employer)}</span>
-                </div>
-                <div className="flex justify-between border-b border-border pb-2">
-                  <span>Withholding Tax</span><span>{formatCurrency(deductions.withholdingTax)}</span>
-                </div>
+              <div>
+                <p className="font-medium">{selectedEmployee.last_name}, {selectedEmployee.first_name}</p>
+                <p className="text-sm text-muted-foreground">{selectedEmployee.employee_code} · {payrollTypeLabel(selectedEmployee.payroll_type)}</p>
+                <p className="text-sm text-muted-foreground mt-1">Basic: {formatCurrency(selectedEmployee.basic_salary)}</p>
+              </div>
+              <div className="space-y-2 text-sm">
+                {[
+                  { label: "SSS (Employee)", val: deductions.sss.employee },
+                  { label: "SSS (Employer)", val: deductions.sss.employer, muted: true },
+                  { label: "SSS EC", val: deductions.sss.ec, muted: true },
+                  { label: "PhilHealth (EE)", val: deductions.philhealth.employee },
+                  { label: "PhilHealth (ER)", val: deductions.philhealth.employer, muted: true },
+                  { label: "Pag-IBIG (EE)", val: deductions.pagibig.employee },
+                  { label: "Pag-IBIG (ER)", val: deductions.pagibig.employer, muted: true },
+                  { label: "Withholding Tax", val: deductions.withholdingTax },
+                ].map(row => (
+                  <div key={row.label} className={`flex justify-between border-b border-border pb-2 ${row.muted ? "text-muted-foreground" : ""}`}>
+                    <span>{row.label}</span><span>{formatCurrency(row.val)}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between font-semibold pt-2">
                   <span>Total EE Deductions</span><span>{formatCurrency(deductions.totalEmployeeDeductions)}</span>
                 </div>
-                <div className="flex justify-between text-muted-foreground">
+                <div className="flex justify-between text-muted-foreground text-xs">
                   <span>Total ER Contributions</span><span>{formatCurrency(deductions.totalEmployerContributions)}</span>
                 </div>
+                <div className="flex justify-between font-bold text-base pt-2 border-t border-border">
+                  <span>Est. Net Pay</span>
+                  <span className="text-primary">{formatCurrency(Math.max(0, selectedEmployee.basic_salary - deductions.totalEmployeeDeductions))}</span>
+                </div>
+              </div>
+              <div className="mt-4 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground space-y-1">
+                {selectedEmployee.sss_number && <div>SSS: {selectedEmployee.sss_number}</div>}
+                {selectedEmployee.philhealth_number && <div>PhilHealth: {selectedEmployee.philhealth_number}</div>}
+                {selectedEmployee.pagibig_number && <div>Pag-IBIG: {selectedEmployee.pagibig_number}</div>}
+                {selectedEmployee.tin_number && <div>TIN: {selectedEmployee.tin_number}</div>}
               </div>
             </div>
           ) : (

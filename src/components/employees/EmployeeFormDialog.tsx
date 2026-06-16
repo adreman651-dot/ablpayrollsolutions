@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 interface EmployeeFormData {
   first_name: string;
@@ -20,6 +21,7 @@ interface EmployeeFormData {
   pagibig_number: string;
   tin_number: string;
   employment_status: string;
+  payroll_type: string;
 }
 
 interface Props {
@@ -32,9 +34,40 @@ interface Props {
   emptyForm: EmployeeFormData;
 }
 
-const DEPARTMENTS = ["HR", "Finance", "IT", "Operations", "Sales", "Marketing", "Admin", "Engineering"];
+const DEPARTMENTS = [
+  "HR", "Finance", "IT", "Operations", "Sales", "Marketing",
+  "Admin", "Engineering", "Accounting", "Logistics", "Production",
+];
+
+const PAYROLL_TYPES = [
+  { value: "monthly_rate", label: "Monthly Rate" },
+  { value: "daily_rate", label: "Daily Rate" },
+  { value: "hourly_rate", label: "Hourly Rate" },
+];
+
+const EMPLOYMENT_STATUSES = [
+  { value: "active", label: "Active" },
+  { value: "probationary", label: "Probationary" },
+  { value: "contractual", label: "Contractual" },
+  { value: "part_time", label: "Part-Time" },
+  { value: "inactive", label: "Inactive" },
+  { value: "resigned", label: "Resigned" },
+  { value: "terminated", label: "Terminated" },
+];
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div className="col-span-full mt-2">
+      <h4 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground border-b border-border pb-1">
+        {title}
+      </h4>
+    </div>
+  );
+}
 
 export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, onSave, editing, emptyForm }: Props) {
+  const payrollTypeLabel = PAYROLL_TYPES.find(p => p.value === form.payroll_type)?.label || "Monthly Rate";
+
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setForm(emptyForm); }}>
       {!editing && (
@@ -42,31 +75,37 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           <Button><Plus className="w-4 h-4 mr-2" />Add Employee</Button>
         </DialogTrigger>
       )}
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit Employee" : "Add New Employee"}</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-          <div className="space-y-2">
-            <Label>First Name *</Label>
-            <Input value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} />
-          </div>
+
+          {/* ── Personal Information ── */}
+          <SectionHeader title="Personal Information" />
           <div className="space-y-2">
             <Label>Last Name *</Label>
-            <Input value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} />
+            <Input value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} placeholder="Dela Cruz" />
+          </div>
+          <div className="space-y-2">
+            <Label>First Name *</Label>
+            <Input value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} placeholder="Juan" />
           </div>
           <div className="space-y-2">
             <Label>Middle Name</Label>
-            <Input value={form.middle_name} onChange={e => setForm({ ...form, middle_name: e.target.value })} />
+            <Input value={form.middle_name} onChange={e => setForm({ ...form, middle_name: e.target.value })} placeholder="Santos" />
           </div>
           <div className="space-y-2">
             <Label>Email</Label>
-            <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+            <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="juan@company.ph" />
           </div>
           <div className="space-y-2">
             <Label>Phone</Label>
-            <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+            <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="09XXXXXXXXX" />
           </div>
+
+          {/* ── Employment Details ── */}
+          <SectionHeader title="Employment Details" />
           <div className="space-y-2">
             <Label>Department</Label>
             <Select value={form.department} onValueChange={v => setForm({ ...form, department: v })}>
@@ -78,49 +117,79 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           </div>
           <div className="space-y-2">
             <Label>Position / Job Title</Label>
-            <Input value={form.job_title} onChange={e => setForm({ ...form, job_title: e.target.value })} />
-          </div>
-          <div className="space-y-2">
-            <Label>Basic Salary (₱) *</Label>
-            <Input type="number" value={form.basic_salary} onChange={e => setForm({ ...form, basic_salary: parseFloat(e.target.value) || 0 })} />
-          </div>
-          <div className="space-y-2">
-            <Label>Hire Date *</Label>
-            <Input type="date" value={form.hire_date} onChange={e => setForm({ ...form, hire_date: e.target.value })} />
+            <Input value={form.job_title} onChange={e => setForm({ ...form, job_title: e.target.value })} placeholder="e.g. Payroll Officer" />
           </div>
           <div className="space-y-2">
             <Label>Employment Status</Label>
             <Select value={form.employment_status} onValueChange={v => setForm({ ...form, employment_status: v })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-                <SelectItem value="probationary">Probationary</SelectItem>
-                <SelectItem value="resigned">Resigned</SelectItem>
-                <SelectItem value="terminated">Terminated</SelectItem>
+                {EMPLOYMENT_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
+            <Label>Hire Date *</Label>
+            <Input type="date" value={form.hire_date} onChange={e => setForm({ ...form, hire_date: e.target.value })} />
+          </div>
+
+          {/* ── Payroll Configuration ── */}
+          <SectionHeader title="Payroll Configuration" />
+          <div className="space-y-2">
+            <Label>Payroll Type</Label>
+            <Select value={form.payroll_type} onValueChange={v => setForm({ ...form, payroll_type: v })}>
+              <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+              <SelectContent>
+                {PAYROLL_TYPES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>
+              Basic Salary (₱) *
+              <Badge variant="outline" className="ml-2 text-xs">{payrollTypeLabel}</Badge>
+            </Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.basic_salary}
+              onChange={e => setForm({ ...form, basic_salary: parseFloat(e.target.value) || 0 })}
+              placeholder="e.g. 25000"
+            />
+            {form.payroll_type === "daily_rate" && form.basic_salary > 0 && (
+              <p className="text-xs text-muted-foreground">≈ ₱{(form.basic_salary * 26).toLocaleString("en-PH")} / mo (26 days)</p>
+            )}
+            {form.payroll_type === "hourly_rate" && form.basic_salary > 0 && (
+              <p className="text-xs text-muted-foreground">≈ ₱{(form.basic_salary * 8 * 26).toLocaleString("en-PH")} / mo</p>
+            )}
+          </div>
+
+          {/* ── Government Numbers ── */}
+          <SectionHeader title="Government ID Numbers" />
+          <div className="space-y-2">
             <Label>SSS Number</Label>
-            <Input value={form.sss_number} onChange={e => setForm({ ...form, sss_number: e.target.value })} />
+            <Input value={form.sss_number} onChange={e => setForm({ ...form, sss_number: e.target.value })} placeholder="XX-XXXXXXX-X" />
           </div>
           <div className="space-y-2">
             <Label>PhilHealth Number</Label>
-            <Input value={form.philhealth_number} onChange={e => setForm({ ...form, philhealth_number: e.target.value })} />
+            <Input value={form.philhealth_number} onChange={e => setForm({ ...form, philhealth_number: e.target.value })} placeholder="XXXX-XXXXXXXX-X" />
           </div>
           <div className="space-y-2">
-            <Label>Pag-IBIG Number</Label>
-            <Input value={form.pagibig_number} onChange={e => setForm({ ...form, pagibig_number: e.target.value })} />
+            <Label>Pag-IBIG (HDMF) Number</Label>
+            <Input value={form.pagibig_number} onChange={e => setForm({ ...form, pagibig_number: e.target.value })} placeholder="XXXX-XXXX-XXXX" />
           </div>
           <div className="space-y-2">
             <Label>TIN Number</Label>
-            <Input value={form.tin_number} onChange={e => setForm({ ...form, tin_number: e.target.value })} />
+            <Input value={form.tin_number} onChange={e => setForm({ ...form, tin_number: e.target.value })} placeholder="XXX-XXX-XXX-XXX" />
           </div>
         </div>
+
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={onSave} disabled={!form.first_name || !form.last_name}>Save</Button>
+          <Button onClick={onSave} disabled={!form.first_name || !form.last_name}>
+            {editing ? "Update Employee" : "Save Employee"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

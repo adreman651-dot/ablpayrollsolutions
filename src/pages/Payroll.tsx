@@ -6,9 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer } from "lucide-react";
+import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { formatCurrency, computeSSS, computePhilHealth, computePagIBIG, computeWithholdingTax, computeDailyRate, computeHourlyRate, WORKING_DAYS_PER_MONTH } from "@/lib/payroll-utils";
+import {
+  formatCurrency, computeSSS, computePhilHealth, computePagIBIG,
+  computeWithholdingTax, computeDailyRate, computeHourlyRate, WORKING_DAYS_PER_MONTH,
+} from "@/lib/payroll-utils";
 import { useAuth } from "@/hooks/useAuth";
 import { exportPayrollExcel } from "@/lib/payroll-export";
 import { generatePayslipsPDF, PayslipData } from "@/lib/payslip-pdf";
@@ -41,7 +44,23 @@ interface PayrollItem {
   other_deductions: number;
   total_deductions: number;
   net_pay: number;
-  employees?: { id: string; first_name: string; last_name: string; employee_code: string; basic_salary: number; department: string | null };
+  leave_days?: number;
+  employees?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    employee_code: string;
+    basic_salary: number;
+    department: string | null;
+    payroll_type: string | null;
+  };
+}
+
+// Overridable deduction row used in manual adjustments
+interface ManualOverride {
+  employee_id: string;
+  cash_advance: number;
+  other_deductions: number;
 }
 
 export default function Payroll() {
@@ -54,6 +73,8 @@ export default function Payroll() {
   const [form, setForm] = useState({ period_start: "", period_end: "" });
   const [processing, setProcessing] = useState(false);
   const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number }>>({});
+  const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
+  const [savingOverrides, setSavingOverrides] = useState(false);
 
   const fetchRuns = async () => {
     const { data, error } = await supabase.from("payroll_runs").select("*").order("created_at", { ascending: false });
@@ -66,15 +87,26 @@ export default function Payroll() {
 
   const createRun = async () => {
     if (!form.period_start || !form.period_end) { toast.error("Select period dates"); return; }
-    // Prevent duplicate processing for same period
     const dup = runs.find(r => r.period_start === form.period_start && r.period_end === form.period_end);
     if (dup) { toast.error("A payroll run for this exact period already exists"); return; }
     const { error } = await supabase.from("payroll_runs").insert({
       period_start: form.period_start, period_end: form.period_end, created_by: user?.id,
     });
     if (error) toast.error(error.message);
-    else { toast.success("Payroll run created"); setDialogOpen(false); setForm({ period_start: "", period_end: "" }); fetchRuns(); }
+    else {
+      toast.success("Payroll run created");
+      setDialogOpen(false);
+      setForm({ period_start: "", period_end: "" });
+      fetchRuns();
+    }
   };
+
+  // Compute employee effective daily rate based on payroll_type
+  function getEffectiveDailyRate(basicSalary: number, payrollType: string | null): number {
+    if (payrollType === "daily_rate") return basicSalary;
+    if (payrollType === "hourly_rate") return basicSalary * 8;
+    return computeDailyRate(basicSalary); // monthly_rate default
+  }
 
   const processRun = async (run: PayrollRun) => {
     if (run.status === "completed") {
@@ -87,15 +119,16 @@ export default function Payroll() {
       const pagibigOverrides = { employee: pagibigMap.pagibig_employee || 400, employer: pagibigMap.pagibig_employer || 400 };
 
       const { data: employees, error: empErr } = await supabase.from("employees")
-        .select("id, basic_salary, employee_code").eq("employment_status", "active");
+        .select("id, basic_salary, employee_code, payroll_type").eq("employment_status", "active");
       if (empErr) throw empErr;
       if (!employees?.length) { toast.error("No active employees"); return; }
 
-      const items = [];
-      // Calculate working days inside the period
       const start = new Date(run.period_start), end = new Date(run.period_end);
       const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-      const workingDays = Math.min(totalDays, WORKING_DAYS_PER_MONTH);
+      const workingDaysInPeriod = Math.min(totalDays, WORKING_DAYS_PER_MONTH);
+      const cycleFactor = totalDays < 20 ? 0.5 : 1;
+
+      const items = [];
 
       for (const emp of employees) {
         const { data: attendance } = await supabase.from("attendance")
@@ -106,50 +139,70 @@ export default function Payroll() {
 
         const totalLateMinutes = (attendance || []).reduce((sum, a) => sum + (a.late_minutes || 0), 0);
         const daysPresent = (attendance || []).filter(a => a.status === "present" || a.status === "late").length;
-        const absences = Math.max(0, workingDays - daysPresent);
+        const absences = Math.max(0, workingDaysInPeriod - daysPresent);
 
-        const dailyRate = computeDailyRate(emp.basic_salary);
-        const hourlyRate = computeHourlyRate(emp.basic_salary);
-        const basicPay = dailyRate * daysPresent;
+        // Fetch approved leaves for the period (use leave credits first)
+        const { data: leaveData } = await supabase.from("leaves")
+          .select("duration")
+          .eq("employee_id", emp.id)
+          .eq("status", "approved")
+          .gte("start_date", run.period_start)
+          .lte("end_date", run.period_end);
+        const leaveDays = (leaveData || []).reduce((sum, l) => sum + (l.duration || 0), 0);
+
+        const dailyRate = getEffectiveDailyRate(emp.basic_salary, emp.payroll_type);
+        const hourlyRate = dailyRate / 8;
+
+        // Gross = (days_present + leave_days) × daily_rate
+        const effectiveDays = daysPresent + leaveDays;
+        const basicPay = dailyRate * effectiveDays;
+
+        // Absences that are NOT covered by leave
+        const unpaidAbsences = Math.max(0, absences - leaveDays);
+        const absenceDeductions = unpaidAbsences * dailyRate;
         const lateDeductions = (totalLateMinutes / 60) * hourlyRate;
-        const absenceDeductions = absences * dailyRate;
 
-        const sss = computeSSS(emp.basic_salary);
-        const ph = computePhilHealth(emp.basic_salary);
-        const pi = computePagIBIG(emp.basic_salary, pagibigOverrides);
+        // Government contributions (pro-rated per cycle)
+        const monthlySalary = emp.payroll_type === "daily_rate"
+          ? emp.basic_salary * WORKING_DAYS_PER_MONTH
+          : emp.payroll_type === "hourly_rate"
+          ? emp.basic_salary * 8 * WORKING_DAYS_PER_MONTH
+          : emp.basic_salary;
 
-        // Pro-rate gov contributions to the cycle (half-month if period < 20 days)
-        const cycleFactor = totalDays < 20 ? 0.5 : 1;
-        const sssEE = sss.employee * cycleFactor;
-        const phEE = ph.employee * cycleFactor;
-        const piEE = pi.employee * cycleFactor;
+        const sss = computeSSS(monthlySalary);
+        const ph = computePhilHealth(monthlySalary);
+        const pi = computePagIBIG(monthlySalary, pagibigOverrides);
 
-        const grossPay = basicPay;
-        const taxableIncome = grossPay - sssEE - phEE - piEE;
-        const tax = computeWithholdingTax(Math.max(0, taxableIncome));
+        const sssEE = +(sss.employee * cycleFactor).toFixed(2);
+        const phEE = +(ph.employee * cycleFactor).toFixed(2);
+        const piEE = +(pi.employee * cycleFactor).toFixed(2);
+
+        const grossPay = +basicPay.toFixed(2);
+        const taxableIncome = Math.max(0, grossPay - sssEE - phEE - piEE);
+        const tax = computeWithholdingTax(taxableIncome);
 
         const { data: loans } = await supabase.from("loans")
           .select("monthly_amortization").eq("employee_id", emp.id).eq("status", "approved");
-        const loanDeductions = (loans || []).reduce((sum, l) => sum + (l.monthly_amortization || 0), 0) * cycleFactor;
+        const loanDeductions = +((loans || []).reduce((sum, l) => sum + (l.monthly_amortization || 0), 0) * cycleFactor).toFixed(2);
 
-        const totalDeductions = lateDeductions + absenceDeductions + sssEE + phEE + piEE + tax + loanDeductions;
-        const netPay = Math.max(0, grossPay - totalDeductions); // prevent negative
+        const totalDeductions = +(lateDeductions + absenceDeductions + sssEE + phEE + piEE + tax + loanDeductions).toFixed(2);
+        const netPay = Math.max(0, grossPay - totalDeductions); // prevent negative net pay
 
         items.push({
           payroll_run_id: run.id,
           employee_id: emp.id,
-          basic_pay: +basicPay.toFixed(2),
-          gross_pay: +grossPay.toFixed(2),
+          basic_pay: grossPay,
+          gross_pay: grossPay,
           late_deductions: +lateDeductions.toFixed(2),
           absence_deductions: +absenceDeductions.toFixed(2),
-          sss_contribution: +sssEE.toFixed(2),
-          philhealth_contribution: +phEE.toFixed(2),
-          pagibig_contribution: +piEE.toFixed(2),
+          sss_contribution: sssEE,
+          philhealth_contribution: phEE,
+          pagibig_contribution: piEE,
           withholding_tax: +tax.toFixed(2),
-          loan_deductions: +loanDeductions.toFixed(2),
+          loan_deductions: loanDeductions,
           cash_advance: 0,
           other_deductions: 0,
-          total_deductions: +totalDeductions.toFixed(2),
+          total_deductions: totalDeductions,
           net_pay: +netPay.toFixed(2),
         });
       }
@@ -170,14 +223,26 @@ export default function Payroll() {
 
   const viewRun = async (run: PayrollRun) => {
     const { data, error } = await supabase.from("payroll_items")
-      .select("*, employees(id, first_name, last_name, employee_code, basic_salary, department)")
+      .select("*, employees(id, first_name, last_name, employee_code, basic_salary, department, payroll_type)")
       .eq("payroll_run_id", run.id);
     if (error) { toast.error(error.message); return; }
-    setViewItems((data as any) || []);
+    const items = (data as any) || [];
+    setViewItems(items);
     setViewingRun(run);
 
-    // Fetch attendance for time-in/time-out + days_worked aggregation
-    const empIds = (data || []).map((d: any) => d.employee_id);
+    // Initialize override state
+    const initOverrides: Record<string, ManualOverride> = {};
+    items.forEach((item: PayrollItem) => {
+      initOverrides[item.employee_id] = {
+        employee_id: item.employee_id,
+        cash_advance: item.cash_advance || 0,
+        other_deductions: item.other_deductions || 0,
+      };
+    });
+    setOverrides(initOverrides);
+
+    // Fetch attendance summary
+    const empIds = items.map((d: any) => d.employee_id);
     if (empIds.length) {
       const { data: att } = await supabase.from("attendance")
         .select("employee_id, time_in, time_out, status")
@@ -197,21 +262,55 @@ export default function Payroll() {
     }
   };
 
+  // Save manual deduction overrides (cash advance + other deductions)
+  const saveOverrides = async () => {
+    if (!viewingRun) return;
+    setSavingOverrides(true);
+    try {
+      for (const item of viewItems) {
+        const ov = overrides[item.employee_id];
+        if (!ov) continue;
+        const ca = ov.cash_advance || 0;
+        const od = ov.other_deductions || 0;
+        const baseDed = item.sss_contribution + item.philhealth_contribution + item.pagibig_contribution +
+          item.withholding_tax + item.loan_deductions + item.late_deductions + item.absence_deductions;
+        const totalDed = +(baseDed + ca + od).toFixed(2);
+        const netPay = Math.max(0, item.gross_pay - totalDed);
+        await supabase.from("payroll_items").update({
+          cash_advance: ca,
+          other_deductions: od,
+          total_deductions: totalDed,
+          net_pay: +netPay.toFixed(2),
+        }).eq("id", item.id);
+      }
+      toast.success("Manual deductions saved. Refreshing...");
+      await viewRun(viewingRun);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSavingOverrides(false);
+    }
+  };
+
   const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 
   const exportExcel = () => {
     if (!viewingRun) return;
     const rows = viewItems.map(item => {
       const att = attendanceMap[item.employee_id] || { days: 0 };
+      const e = item.employees;
+      const monthly = e?.payroll_type === "daily_rate" ? (e.basic_salary * WORKING_DAYS_PER_MONTH) :
+        e?.payroll_type === "hourly_rate" ? (e.basic_salary * 8 * WORKING_DAYS_PER_MONTH) : (e?.basic_salary || 0);
+      const daily = monthly / WORKING_DAYS_PER_MONTH;
       return {
-        employee_id: item.employees?.employee_code || "",
-        employee_name: item.employees ? `${item.employees.last_name}, ${item.employees.first_name}` : "",
+        employee_id: e?.employee_code || "",
+        employee_name: e ? `${e.last_name}, ${e.first_name}` : "",
         time_in: fmtTime(att.time_in),
         time_out: fmtTime(att.time_out),
         days_worked: att.days,
-        leave_days: 0,
-        basic_monthly_rate: item.employees?.basic_salary || 0,
-        basic_daily_rate: item.employees ? +(item.employees.basic_salary / WORKING_DAYS_PER_MONTH).toFixed(2) : 0,
+        leave_days: item.leave_days || 0,
+        basic_monthly_rate: monthly,
+        basic_daily_rate: +daily.toFixed(2),
         gross_income: item.gross_pay,
         sss: item.sss_contribution,
         philhealth: item.philhealth_contribution,
@@ -228,11 +327,9 @@ export default function Payroll() {
 
   const exportPayslipsPDF = async () => {
     if (!viewingRun) return;
-    // Company name
     const { data: cn } = await supabase.from("system_settings").select("value").eq("key", "company_name").maybeSingle();
-    const companyName = cn?.value || "JHAYMARTS INDUSTRIES INC.";
+    const companyName = cn?.value || "ABL PAYROLL SOLUTIONS";
 
-    // Fetch detailed attendance per employee for work-detail costing
     const empIds = viewItems.map(i => i.employee_id);
     const { data: att } = await supabase.from("attendance")
       .select("employee_id, date, time_in, time_out, status")
@@ -246,8 +343,7 @@ export default function Payroll() {
       const arr = wdMap[a.employee_id] || [];
       let hours = 0;
       if (a.time_in && a.time_out) {
-        hours = (new Date(a.time_out).getTime() - new Date(a.time_in).getTime()) / 3600000;
-        hours = Math.max(0, Math.min(8, hours));
+        hours = Math.max(0, Math.min(8, (new Date(a.time_out).getTime() - new Date(a.time_in).getTime()) / 3600000));
       } else if (a.status === "present" || a.status === "late") hours = 8;
       arr.push({ date: new Date(a.date).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" }), hours });
       wdMap[a.employee_id] = arr;
@@ -255,8 +351,7 @@ export default function Payroll() {
 
     const payslips: PayslipData[] = viewItems.map(item => {
       const e = item.employees!;
-      const dailyRate = e.basic_salary / WORKING_DAYS_PER_MONTH;
-      const att = attendanceMap[item.employee_id] || { days: 0 };
+      const attInfo = attendanceMap[item.employee_id] || { days: 0 };
       const wd = wdMap[item.employee_id] || [];
       const hoursWorked = wd.reduce((s, w) => s + w.hours, 0);
       return {
@@ -269,7 +364,7 @@ export default function Payroll() {
         department: e.department || "—",
         location: "Office",
         basicSalary: e.basic_salary,
-        daysWorked: att.days,
+        daysWorked: attInfo.days,
         hoursWorked,
         straightTime: item.basic_pay,
         holidayPay: item.holiday_pay || 0,
@@ -279,15 +374,12 @@ export default function Payroll() {
         sss: item.sss_contribution,
         netTaxable: item.gross_pay - item.pagibig_contribution - item.philhealth_contribution - item.sss_contribution - item.withholding_tax,
         otherDeductions: (item.other_deductions || 0) + (item.loan_deductions || 0),
-        totalDeductions: (item.other_deductions || 0) + (item.loan_deductions || 0) + (item.cash_advance || 0),
+        totalDeductions: item.total_deductions,
         riceAllowance: item.allowances ? item.allowances / 2 : 0,
         riceAllowance2: 0,
         totalNonTaxable: item.allowances || 0,
         netPay: item.net_pay,
-        ytdIncomeTxNtx: 0,
-        ytdIncomeTx: 0,
-        ytdIncomeNtx: 0,
-        ytd13thMonth: 0,
+        ytdIncomeTxNtx: 0, ytdIncomeTx: 0, ytdIncomeNtx: 0, ytd13thMonth: 0,
         workDetails: wd,
       };
     });
@@ -297,7 +389,16 @@ export default function Payroll() {
     toast.success("Payslips PDF generated");
   };
 
-  const printPayroll = () => window.print();
+  const totals = viewItems.reduce((acc, item) => ({
+    gross: acc.gross + item.gross_pay,
+    sss: acc.sss + item.sss_contribution,
+    ph: acc.ph + item.philhealth_contribution,
+    hdmf: acc.hdmf + item.pagibig_contribution,
+    tax: acc.tax + item.withholding_tax,
+    ca: acc.ca + (item.cash_advance || 0),
+    other: acc.other + (item.other_deductions || 0) + (item.loan_deductions || 0) + (item.late_deductions || 0) + (item.absence_deductions || 0),
+    net: acc.net + item.net_pay,
+  }), { gross: 0, sss: 0, ph: 0, hdmf: 0, tax: 0, ca: 0, other: 0, net: 0 });
 
   return (
     <div>
@@ -323,6 +424,7 @@ export default function Payroll() {
         </Dialog>
       </div>
 
+      {/* Payroll Runs List */}
       <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
         <Table>
           <TableHeader><TableRow>
@@ -336,7 +438,7 @@ export default function Payroll() {
               <TableRow><TableCell colSpan={4} className="text-center py-12 text-muted-foreground">No payroll runs yet</TableCell></TableRow>
             ) : runs.map(run => (
               <TableRow key={run.id}>
-                <TableCell className="font-medium">{run.period_start} to {run.period_end}</TableCell>
+                <TableCell className="font-medium">{run.period_start} — {run.period_end}</TableCell>
                 <TableCell>{run.run_date}</TableCell>
                 <TableCell><Badge variant={run.status === "completed" ? "default" : "secondary"}>{run.status}</Badge></TableCell>
                 <TableCell><div className="flex gap-1">
@@ -353,36 +455,61 @@ export default function Payroll() {
         </Table>
       </div>
 
+      {/* Payroll Detail View */}
       {viewingRun && (
         <div className="bg-card border border-border rounded-xl overflow-hidden">
           <div className="p-4 border-b border-border flex items-center justify-between flex-wrap gap-2">
-            <h3 className="font-display font-semibold">Payroll Details: {viewingRun.period_start} to {viewingRun.period_end}</h3>
-            <div className="flex items-center gap-2">
+            <div>
+              <h3 className="font-display font-semibold">Payroll Details: {viewingRun.period_start} to {viewingRun.period_end}</h3>
+              <p className="text-xs text-muted-foreground mt-1">{viewItems.length} employees · Status: {viewingRun.status}</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
               <Button size="sm" variant="outline" onClick={exportExcel}><FileSpreadsheet className="w-4 h-4 mr-1" />Excel</Button>
               <Button size="sm" variant="outline" onClick={exportPayslipsPDF}><FileText className="w-4 h-4 mr-1" />Payslips PDF</Button>
-              <Button size="sm" variant="outline" onClick={printPayroll}><Printer className="w-4 h-4 mr-1" />Print</Button>
+              <Button size="sm" variant="outline" onClick={() => window.print()}><Printer className="w-4 h-4 mr-1" />Print</Button>
               <Button variant="ghost" size="sm" onClick={() => setViewingRun(null)}>Close</Button>
             </div>
           </div>
+
+          {/* Manual Deductions Notice */}
+          <div className="px-4 py-3 bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              You can manually enter <strong>Cash Advance</strong> and <strong>Other Deductions</strong> below.
+              Click <strong>Save Deductions</strong> to recalculate Net Pay. Net Pay will never go below ₱0.
+            </p>
+          </div>
+
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
-                <TableHead>Employee</TableHead><TableHead>ID</TableHead>
-                <TableHead>Time In</TableHead><TableHead>Time Out</TableHead>
+                <TableHead>Employee</TableHead>
+                <TableHead>ID</TableHead>
+                <TableHead>Time In</TableHead>
+                <TableHead>Time Out</TableHead>
                 <TableHead className="text-right">Days</TableHead>
-                <TableHead className="text-right">Monthly</TableHead><TableHead className="text-right">Daily</TableHead>
+                <TableHead className="text-right">Monthly Rate</TableHead>
+                <TableHead className="text-right">Daily Rate</TableHead>
                 <TableHead className="text-right">Gross</TableHead>
-                <TableHead className="text-right">SSS</TableHead><TableHead className="text-right">PHIC</TableHead>
-                <TableHead className="text-right">HDMF</TableHead><TableHead className="text-right">Tax</TableHead>
-                <TableHead className="text-right">CA</TableHead><TableHead className="text-right">Other</TableHead>
+                <TableHead className="text-right">SSS</TableHead>
+                <TableHead className="text-right">PHIC</TableHead>
+                <TableHead className="text-right">HDMF</TableHead>
+                <TableHead className="text-right">Tax</TableHead>
+                <TableHead className="text-right min-w-[110px]">Cash Advance</TableHead>
+                <TableHead className="text-right min-w-[110px]">Other Ded.</TableHead>
                 <TableHead className="text-right font-bold">Net Pay</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {viewItems.map(item => {
                   const e = item.employees;
                   const att = attendanceMap[item.employee_id] || { days: 0 };
-                  const daily = e ? e.basic_salary / WORKING_DAYS_PER_MONTH : 0;
-                  const otherTotal = (item.other_deductions || 0) + (item.loan_deductions || 0) + (item.late_deductions || 0) + (item.absence_deductions || 0);
+                  const monthly = e?.payroll_type === "daily_rate"
+                    ? (e.basic_salary * WORKING_DAYS_PER_MONTH)
+                    : e?.payroll_type === "hourly_rate"
+                    ? (e.basic_salary * 8 * WORKING_DAYS_PER_MONTH)
+                    : (e?.basic_salary || 0);
+                  const daily = +(monthly / WORKING_DAYS_PER_MONTH).toFixed(2);
+                  const ov = overrides[item.employee_id] || { cash_advance: 0, other_deductions: 0 };
                   return (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium whitespace-nowrap">{e ? `${e.last_name}, ${e.first_name}` : "—"}</TableCell>
@@ -390,21 +517,63 @@ export default function Payroll() {
                       <TableCell className="text-xs">{fmtTime(att.time_in)}</TableCell>
                       <TableCell className="text-xs">{fmtTime(att.time_out)}</TableCell>
                       <TableCell className="text-right">{att.days}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(e?.basic_salary || 0)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(monthly)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(daily)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.gross_pay)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.sss_contribution)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.philhealth_contribution)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.pagibig_contribution)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.withholding_tax)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(item.cash_advance || 0)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(otherTotal)}</TableCell>
-                      <TableCell className="text-right font-bold">{formatCurrency(item.net_pay)}</TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="w-24 text-right h-7 text-xs"
+                          value={ov.cash_advance}
+                          onChange={e2 => setOverrides(prev => ({
+                            ...prev,
+                            [item.employee_id]: { ...ov, cash_advance: parseFloat(e2.target.value) || 0 },
+                          }))}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="w-24 text-right h-7 text-xs"
+                          value={ov.other_deductions}
+                          onChange={e2 => setOverrides(prev => ({
+                            ...prev,
+                            [item.employee_id]: { ...ov, other_deductions: parseFloat(e2.target.value) || 0 },
+                          }))}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-primary">{formatCurrency(item.net_pay)}</TableCell>
                     </TableRow>
                   );
                 })}
+                {/* Totals Row */}
+                <TableRow className="bg-muted/30 font-semibold">
+                  <TableCell colSpan={7} className="text-right text-sm text-muted-foreground">TOTALS</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.gross)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.sss)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.ph)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.hdmf)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.tax)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.ca)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(totals.other)}</TableCell>
+                  <TableCell className="text-right font-bold text-primary">{formatCurrency(totals.net)}</TableCell>
+                </TableRow>
               </TableBody>
             </Table>
+          </div>
+
+          <div className="p-4 border-t border-border flex justify-end">
+            <Button onClick={saveOverrides} disabled={savingOverrides}>
+              {savingOverrides ? "Saving..." : "Save Deductions & Recalculate"}
+            </Button>
           </div>
         </div>
       )}

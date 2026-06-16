@@ -86,11 +86,24 @@ export default function Attendance() {
 
     if (existing && !existing.time_out) {
       // Clock out
+      const timeIn = new Date(existing.time_in);
+      const diffMs = now.getTime() - timeIn.getTime();
+      let totalHours = diffMs / (1000 * 60 * 60);
+      
+      // Deduct 1 hour break if they worked more than 5 hours
+      if (totalHours > 5) totalHours -= 1;
+      
+      const overtimeMinutes = totalHours > 8 ? Math.round((totalHours - 8) * 60) : 0;
+      const undertimeMinutes = totalHours < 8 && totalHours > 0 ? Math.round((8 - totalHours) * 60) : 0;
+
       const { error } = await supabase.from("attendance").update({
         time_out: now.toISOString(),
+        total_hours_worked: Math.max(0, parseFloat(totalHours.toFixed(2))),
+        overtime_minutes: overtimeMinutes,
+        undertime_minutes: undertimeMinutes,
       }).eq("id", existing.id);
       if (error) toast.error(error.message);
-      else toast.success("Clocked out successfully!");
+      else toast.success("Clocked out successfully! Total hours: " + totalHours.toFixed(2));
     } else if (existing && existing.time_out) {
       toast.error("Already clocked in and out today");
     } else {
