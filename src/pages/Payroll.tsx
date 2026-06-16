@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -73,6 +74,10 @@ export default function Payroll() {
   const [form, setForm] = useState({ period_start: "", period_end: "", run_date: "", cutoff_type: "15th" });
   const [autoGen, setAutoGen] = useState({ month: new Date().toISOString().slice(0, 7), cycle: "1st" });
   const [cutoffSettings, setCutoffSettings] = useState({ daysBefore: 3, skipWeekends: false });
+  const [processing, setProcessing] = useState(false);
+  const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number }>>({});
+  const [savingOverrides, setSavingOverrides] = useState(false);
 
   const fetchRuns = async () => {
     const { data, error } = await supabase.from("payroll_runs").select("*").order("created_at", { ascending: false });
