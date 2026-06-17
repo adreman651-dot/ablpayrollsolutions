@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,10 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle } from "lucide-react";
-import {
-  SSS_TABLE, PHILHEALTH_RATE, PHILHEALTH_FLOOR, PHILHEALTH_CEILING, formatCurrency,
-  PAGIBIG_DEFAULT_EMPLOYEE, PAGIBIG_DEFAULT_EMPLOYER,
-} from "@/lib/payroll-utils";
+import { formatCurrency } from "@/lib/payroll-utils";
 
 interface Setting {
   id: string;
@@ -29,16 +26,7 @@ interface UserWithRole {
   full_name: string;
 }
 
-// Generate PhilHealth sample table rows
-function generatePhilHealthRows() {
-  const sampleSalaries = [10000, 12000, 15000, 17500, 20000, 25000, 30000, 35000, 40000, 50000, 60000, 70000, 80000, 90000, 100000];
-  return sampleSalaries.map(salary => {
-    const base = Math.max(Math.min(salary, PHILHEALTH_CEILING), PHILHEALTH_FLOOR);
-    const total = base * PHILHEALTH_RATE;
-    const share = total / 2;
-    return { salary, total, employee: share, employer: share };
-  });
-}
+
 
 // TRAIN Law 2025 withholding tax table for display
 const TRAIN_TAX_TABLE = [
@@ -102,7 +90,7 @@ export default function Settings() {
     setRoleDialog(false);
   };
 
-  const philHealthRows = generatePhilHealthRows();
+
 
   // --- Maintenance Functions ---
   const handleBackup = async () => {
@@ -208,10 +196,8 @@ export default function Settings() {
         <TabsList className="flex-wrap h-auto gap-1 mb-4">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="roles">User Roles</TabsTrigger>
-          <TabsTrigger value="sss">SSS Table</TabsTrigger>
-          <TabsTrigger value="philhealth">PhilHealth</TabsTrigger>
-          <TabsTrigger value="pagibig">Pag-IBIG</TabsTrigger>
           <TabsTrigger value="tax">Withholding Tax</TabsTrigger>
+          <TabsTrigger value="voice">Voice Settings</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
         </TabsList>
 
@@ -313,138 +299,6 @@ export default function Settings() {
           </div>
         </TabsContent>
 
-        {/* ─── SSS Contribution Schedule ──────────────────────────── */}
-        <TabsContent value="sss" className="mt-0">
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-display font-semibold">SSS Contribution Table (2025–2026)</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Based on official SSS contribution schedule. MSC range: ₱5,000 – ₱35,000. Rate: EE 5%, ER 10%.
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">MSC</TableHead>
-                    <TableHead className="text-right">ER (10%)</TableHead>
-                    <TableHead className="text-right">EE (5%)</TableHead>
-                    <TableHead className="text-right">Total SSS</TableHead>
-                    <TableHead className="text-right">EC</TableHead>
-                    <TableHead className="text-right">Total ER</TableHead>
-                    <TableHead className="text-right">Grand Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {SSS_TABLE.map(row => (
-                    <TableRow key={row.msc}>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(row.msc)}</TableCell>
-                      <TableCell className="text-right text-sm">{formatCurrency(row.employerShare)}</TableCell>
-                      <TableCell className="text-right text-sm font-medium">{formatCurrency(row.employeeShare)}</TableCell>
-                      <TableCell className="text-right text-sm">{formatCurrency(row.totalSSS)}</TableCell>
-                      <TableCell className="text-right text-sm">{formatCurrency(row.ecContribution)}</TableCell>
-                      <TableCell className="text-right text-sm">{formatCurrency(row.totalEmployer)}</TableCell>
-                      <TableCell className="text-right text-sm font-medium">{formatCurrency(row.totalContribution)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ─── PhilHealth Schedule ──────────────────────────────────── */}
-        <TabsContent value="philhealth" className="mt-0">
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-display font-semibold">PhilHealth Contribution Table (2025–2026)</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Premium Rate: {(PHILHEALTH_RATE * 100).toFixed(1)}% of Monthly Basic Salary.
-                Floor: {formatCurrency(PHILHEALTH_FLOOR)} · Ceiling: {formatCurrency(PHILHEALTH_CEILING)} · Split: 50/50 (ER + EE)
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">Monthly Basic Salary</TableHead>
-                    <TableHead className="text-right">Total Premium (5%)</TableHead>
-                    <TableHead className="text-right">EE Share (2.5%)</TableHead>
-                    <TableHead className="text-right">ER Share (2.5%)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {philHealthRows.map(row => (
-                    <TableRow key={row.salary}>
-                      <TableCell className="text-right font-mono text-sm">{formatCurrency(row.salary)}</TableCell>
-                      <TableCell className="text-right text-sm">{formatCurrency(row.total)}</TableCell>
-                      <TableCell className="text-right text-sm font-medium">{formatCurrency(row.employee)}</TableCell>
-                      <TableCell className="text-right text-sm">{formatCurrency(row.employer)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ─── Pag-IBIG Contribution Settings ──────────────────────── */}
-        <TabsContent value="pagibig" className="mt-0">
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-display font-semibold">Pag-IBIG (HDMF) Contribution Settings</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Configure the fixed monthly Pag-IBIG employee and employer shares. Default: ₱200 EE + ₱200 ER (max ₱400/mo).
-              </p>
-            </div>
-            <div className="p-6">
-              {(() => {
-                const eeRow = settings.find(s => s.key === "pagibig_employee");
-                const erRow = settings.find(s => s.key === "pagibig_employer");
-                return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-lg">
-                    <div className="space-y-2">
-                      <Label className="font-medium">Employee Share (₱)</Label>
-                      {eeRow ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            value={eeRow.value}
-                            onChange={e => setSettings(prev => prev.map(p => p.id === eeRow.id ? { ...p, value: e.target.value } : p))}
-                            className="w-32"
-                          />
-                          <Button size="sm" variant="outline" onClick={() => updateSetting(eeRow.id, eeRow.value)}>
-                            <Save className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Default: ₱{PAGIBIG_DEFAULT_EMPLOYEE}</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="font-medium">Employer Share (₱)</Label>
-                      {erRow ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            value={erRow.value}
-                            onChange={e => setSettings(prev => prev.map(p => p.id === erRow.id ? { ...p, value: e.target.value } : p))}
-                            className="w-32"
-                          />
-                          <Button size="sm" variant="outline" onClick={() => updateSetting(erRow.id, erRow.value)}>
-                            <Save className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Default: ₱{PAGIBIG_DEFAULT_EMPLOYER}</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </TabsContent>
 
         {/* ─── Withholding Tax Table ────────────────────────────────── */}
         <TabsContent value="tax" className="mt-0">
@@ -483,6 +337,86 @@ export default function Settings() {
                 The first ₱250,000 of annual income is exempt from tax as provided under RA 10963 (TRAIN Law).
                 This table is display-only; tax is computed automatically during payroll processing.
               </p>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ─── Voice Settings ───────────────────────────────────────── */}
+        <TabsContent value="voice" className="mt-0">
+          <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-display font-semibold">Voice Settings</h3>
+              <p className="text-sm text-muted-foreground mt-1">Configure hybrid voice prompts for the Employee Time In/Out Kiosk.</p>
+            </div>
+            <div className="p-6 flex flex-col gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
+                {(() => {
+                  const useCustom = settings.find(s => s.key === "voice_use_custom");
+                  const fallback = settings.find(s => s.key === "voice_fallback_tts");
+                  return (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="font-medium">Use Custom MP3 Voice Prompts</Label>
+                        <Select 
+                          value={useCustom?.value || "false"} 
+                          onValueChange={v => {
+                            if (useCustom) updateSetting(useCustom.id, v);
+                            else toast.info("Setting not initialized in DB yet.");
+                          }}
+                        >
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="true">Yes</SelectItem>
+                            <SelectItem value="false">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="font-medium">Fallback to Text-to-Speech</Label>
+                        <Select 
+                          value={fallback?.value || "true"} 
+                          onValueChange={v => {
+                            if (fallback) updateSetting(fallback.id, v);
+                            else toast.info("Setting not initialized in DB yet.");
+                          }}
+                        >
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="true">Yes</SelectItem>
+                            <SelectItem value="false">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="border-t border-border pt-6">
+                <h4 className="font-medium mb-4">MP3 URLs / File Paths</h4>
+                <div className="grid grid-cols-1 gap-4 max-w-2xl">
+                  {['voice_time_in_success', 'voice_time_out_success', 'voice_employee_not_found', 'voice_invalid_employee_id'].map(key => {
+                    const row = settings.find(s => s.key === key);
+                    const label = key.replace("voice_", "").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+                    return (
+                      <div key={key} className="space-y-1">
+                        <Label>{label} MP3 URL</Label>
+                        <div className="flex gap-2">
+                          <Input 
+                            value={row?.value || ""} 
+                            placeholder="e.g. /uploads/voice/prompt.mp3 or https://..."
+                            onChange={e => setSettings(prev => prev.map(p => p.id === row?.id ? { ...p, value: e.target.value } : p))}
+                          />
+                          {row && (
+                            <Button size="sm" variant="outline" onClick={() => updateSetting(row.id, row.value)}>
+                              <Save className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </TabsContent>

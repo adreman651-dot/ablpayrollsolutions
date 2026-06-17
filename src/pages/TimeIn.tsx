@@ -18,6 +18,25 @@ export default function TimeIn() {
   const [address, setAddress] = useState<string>("");
   const [mode, setMode] = useState<Mode>("in");
   const [cameraReady, setCameraReady] = useState(false);
+  const [voiceSettings, setVoiceSettings] = useState<Record<string, string>>({});
+  const [confirmation, setConfirmation] = useState<{name: string, type: string, date: string, time: string, location: string, lat: number, lng: number} | null>(null);
+
+  useEffect(() => {
+    supabase.from("system_settings").select("key, value").like("key", "voice_%").then(({ data }) => {
+      if (data) {
+        const obj: Record<string, string> = {};
+        data.forEach(d => obj[d.key] = d.value);
+        setVoiceSettings(obj);
+      }
+    });
+  }, []);
+
+  const playAudio = (url: string) => {
+    try {
+      const audio = new Audio(url);
+      audio.play().catch(() => {});
+    } catch {}
+  };
 
   // Clock
   useEffect(() => {
@@ -65,14 +84,29 @@ export default function TimeIn() {
     return () => { stream?.getTracks().forEach(t => t.stop()); };
   }, []);
 
-  // Lookup employee name as code is entered (via secure RPC; no direct table access)
+  // Lookup employee name as code is entered
   useEffect(() => {
     if (!code) { setEmployeeName(""); return; }
     const lookup = code.startsWith("ABL-") ? code : "ABL-" + code.padStart(5, "0");
     const tid = setTimeout(async () => {
       const { data } = await supabase.rpc("kiosk_lookup_employee", { _code: lookup });
       const row = Array.isArray(data) ? data[0] : null;
-      setEmployeeName(row ? `${row.first_name} ${row.last_name}`.toUpperCase() : "");
+      if (row) {
+        setEmployeeName(`${row.first_name} ${row.last_name}`.toUpperCase());
+        // Auto detect mode
+        const today = localDateStr();
+        if (row.id) {
+          const { data: att } = await supabase.from('attendance')
+             .select('time_in, time_out')
+             .eq('employee_id', row.id)
+             .eq('date', today)
+             .maybeSingle();
+          if (!att) setMode("in");
+          else if (att.time_in && !att.time_out) setMode("out");
+        }
+      } else {
+        setEmployeeName("");
+      }
     }, 200);
     return () => clearTimeout(tid);
   }, [code]);
@@ -103,11 +137,29 @@ export default function TimeIn() {
     } catch {}
   };
 
+  const hybridSpeak = (ttsText: string, eventKey: string) => {
+    speak(ttsText);
+    const useMP3 = voiceSettings.voice_use_custom !== "false";
+    const fallback = voiceSettings.voice_fallback_tts !== "false";
+    const url = voiceSettings[eventKey];
+
+    if (useMP3 && url) {
+      setTimeout(() => playAudio(url), 1500); // play after TTS
+    } else if (fallback) {
+      setTimeout(() => {
+        if (eventKey === "voice_time_in_success") speak("Successfully timed in.");
+        else if (eventKey === "voice_time_out_success") speak("Successfully timed out.");
+        else if (eventKey === "voice_employee_not_found") speak("Employee record not found.");
+        else if (eventKey === "voice_invalid_employee_id") speak("Invalid Employee ID.");
+      }, 1500);
+    }
+  };
+
   // Announce employee name as soon as it's resolved
   useEffect(() => {
     if (employeeName && code) {
       const spelled = code.split("").join(" ");
-      speak(`Employee Code ${spelled}. Welcome ${employeeName}.`);
+      speak(`Welcome ${employeeName}.`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeName]);
@@ -122,33 +174,62 @@ export default function TimeIn() {
 
   const submit = async () => {
     if (!code.trim()) { toast.error("Enter your Employee ID"); return; }
+    if (!location) {
+      toast.error("Location access is required for attendance recording.");
+      return;
+    }
+    const selfie = captureSelfie();
+    if (!selfie) {
+      toast.error("Selfie verification is required.");
+      return;
+    }
     setSubmitting(true);
     try {
       const lookup = "ABL-" + code.padStart(5, "0");
-      const selfie = captureSelfie();
+      
       const { data, error } = await supabase.rpc("kiosk_punch", {
         _code: lookup,
         _mode: mode,
-        _latitude: location?.lat ?? null,
-        _longitude: location?.lng ?? null,
+        _latitude: location.lat,
+        _longitude: location.lng,
         _selfie: selfie,
         _address: address || null,
       });
       if (error) { toast.error(error.message); return; }
       const res = data as { ok?: boolean; error?: string; first_name?: string; last_name?: string; late_minutes?: number } | null;
-      if (!res?.ok) { toast.error(res?.error || "Punch failed"); return; }
+      if (!res?.ok) { 
+        toast.error(res?.error || "Invalid Employee ID."); 
+        hybridSpeak("Invalid Employee ID.", "voice_invalid_employee_id");
+        return; 
+      }
 
       const fn = res.first_name ?? "";
       const ln = res.last_name ?? "";
+      const fullName = `${fn} ${ln}`;
+      const timeStr = new Date().toLocaleTimeString();
+      const dateStr = new Date().toLocaleDateString();
+
       if (mode === "in") {
         const late = res.late_minutes ?? 0;
         toast.success(`${fn} Successfully timed in!${late ? ` (${late}m late)` : ""}`);
-        speak(`Welcome ${fn} ${ln}. Your Time In has been recorded.`);
+        hybridSpeak(`Welcome ${fn}.`, "voice_time_in_success");
       } else {
         toast.success(`${fn} Successfully timed out!`);
-        speak(`Thank you ${fn} ${ln}. Your Time Out has been recorded.`);
+        hybridSpeak(`Thank you ${fn}.`, "voice_time_out_success");
       }
+      
+      setConfirmation({
+        name: fullName,
+        type: mode === "in" ? "Time In" : "Time Out",
+        date: dateStr,
+        time: timeStr,
+        location: address || "Location acquired",
+        lat: location.lat,
+        lng: location.lng
+      });
+      
       setCode("");
+      setTimeout(() => setConfirmation(null), 5000);
     } finally {
       setSubmitting(false);
     }
@@ -229,6 +310,44 @@ export default function TimeIn() {
         <button onClick={back} className="absolute bottom-[260px] right-3 w-12 h-12 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70">
           <Delete className="w-5 h-5" />
         </button>
+      )}
+
+      {/* Confirmation Overlay */}
+      {confirmation && (
+        <div className="absolute inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-6 text-white text-center animate-in fade-in duration-300">
+          <div className="bg-white/10 p-8 rounded-3xl backdrop-blur-md max-w-sm w-full border border-white/20 shadow-2xl">
+            <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 className="text-3xl font-bold mb-1">{confirmation.type} Successful</h2>
+            <p className="text-xl font-medium text-white/80 mb-6">{confirmation.name}</p>
+            
+            <div className="space-y-3 text-sm text-left bg-black/40 p-4 rounded-xl border border-white/10">
+              <div className="flex justify-between">
+                <span className="text-white/60">Date</span>
+                <span className="font-medium">{confirmation.date}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/60">Time</span>
+                <span className="font-medium text-primary-foreground">{confirmation.time}</span>
+              </div>
+              <div className="pt-2 border-t border-white/10">
+                <span className="text-white/60 block text-xs mb-1">Exact Location</span>
+                <span className="font-medium leading-tight block">{confirmation.location}</span>
+              </div>
+              <div className="flex justify-between text-xs text-white/50 pt-1">
+                <span>Lat: {confirmation.lat.toFixed(5)}</span>
+                <span>Lng: {confirmation.lng.toFixed(5)}</span>
+              </div>
+            </div>
+            
+            <Button onClick={() => setConfirmation(null)} className="w-full mt-6" variant="secondary">
+              Done
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

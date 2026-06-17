@@ -18,6 +18,8 @@ interface AttendanceRecord {
   status: string;
   latitude: number | null;
   longitude: number | null;
+  exact_location: string | null;
+  attendance_type: string | null;
   employees?: { first_name: string; last_name: string; employee_code: string };
 }
 
@@ -194,7 +196,7 @@ export default function Attendance() {
               <TableHead>Time Out</TableHead>
               <TableHead>Late (min)</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Location</TableHead>
+              <TableHead className="min-w-[200px]">Exact Location</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -218,7 +220,11 @@ export default function Attendance() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {r.latitude && r.longitude ? `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}` : "—"}
+                    {r.exact_location ? (
+                      <div className="line-clamp-2" title={r.exact_location}>{r.exact_location}</div>
+                    ) : r.latitude && r.longitude ? (
+                      `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`
+                    ) : "—"}
                   </TableCell>
                 </TableRow>
               ))

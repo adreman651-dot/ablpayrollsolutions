@@ -515,7 +515,7 @@ export default function Payroll() {
                   </Select>
                 </div>
               </div>
-              <Button onClick={createRun} className="w-full mt-2">Generate Payroll Run</Button>
+              <Button onClick={handleCreateRun} className="w-full mt-2">Generate Payroll Run</Button>
             </div>
           </DialogContent>
         </Dialog>
