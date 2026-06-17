@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { BeamsBackground } from "@/components/ui/beams-background";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -23,12 +24,7 @@ export default function Landing() {
   const dateStr = now.toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
   return (
-    <div className="landing-root">
-      {/* Animated background blobs */}
-      <div className="landing-blob blob-1" />
-      <div className="landing-blob blob-2" />
-      <div className="landing-blob blob-3" />
-
+    <BeamsBackground className="landing-root">
       <div className="landing-content">
         {/* Branding */}
         <div className="landing-brand">
@@ -275,6 +271,6 @@ export default function Landing() {
           text-align: center;
         }
       `}</style>
-    </div>
+    </BeamsBackground>
   );
 }

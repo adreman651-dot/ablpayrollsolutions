@@ -73,17 +73,6 @@ export default function Auth() {
                 {submitting ? "Please wait..." : "Sign In"}
               </Button>
             </form>
-            <div className="mt-6 pt-4 border-t border-border text-center">
-              <p className="text-sm text-muted-foreground mb-2">Are you an employee?</p>
-              <div className="flex gap-2">
-                <Link to="/time-in" className="flex-1">
-                  <Button variant="outline" className="w-full text-emerald-600 border-emerald-200 hover:bg-emerald-50">Time In</Button>
-                </Link>
-                <Link to="/time-out" className="flex-1">
-                  <Button variant="outline" className="w-full text-red-600 border-red-200 hover:bg-red-50">Time Out</Button>
-                </Link>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

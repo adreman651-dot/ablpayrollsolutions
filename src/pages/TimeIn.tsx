@@ -474,7 +474,7 @@ export default function TimeIn() {
           <div className="fixed top-0 left-0 right-0 z-[10] flex flex-col items-center pt-10 pb-4 pointer-events-none"
             style={{ textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>
             <div className="text-[32px] font-bold tracking-widest text-white uppercase">
-              {enableFaceGate && mode ? `TIME ${mode.toUpperCase()}` : "TIME IN / TIME OUT"}
+              {enableFaceGate && mode ? `TIME ${mode.toUpperCase()}` : mode ? `TIME ${mode.toUpperCase()}` : "TIME IN / TIME OUT"}
             </div>
 
             {/* Typed code display — actual numbers, NOT dots */}
@@ -513,26 +513,31 @@ export default function TimeIn() {
                 </div>
 
                 <div className="flex gap-4">
-                  <button
-                    onClick={() => submitPunch("in")}
-                    disabled={!faceDetected || submitting}
-                    className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
-                      ${faceDetected && !submitting
-                        ? "bg-[#00C853] hover:bg-[#00E676] active:scale-95"
-                        : "bg-[#00C853]/40 cursor-not-allowed opacity-50"}`}
-                  >
-                    {submitting ? "..." : "TIME IN"}
-                  </button>
-                  <button
-                    onClick={() => submitPunch("out")}
-                    disabled={!faceDetected || submitting}
-                    className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
-                      ${faceDetected && !submitting
-                        ? "bg-[#D50000] hover:bg-[#FF1744] active:scale-95"
-                        : "bg-[#D50000]/40 cursor-not-allowed opacity-50"}`}
-                  >
-                    {submitting ? "..." : "TIME OUT"}
-                  </button>
+                  {/* Show only TIME IN button if routeMode is 'in', only TIME OUT if 'out', both if no route mode */}
+                  {(!routeMode || routeMode === "in") && (
+                    <button
+                      onClick={() => submitPunch("in")}
+                      disabled={!faceDetected || submitting}
+                      className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                        ${faceDetected && !submitting
+                          ? "bg-[#00C853] hover:bg-[#00E676] active:scale-95"
+                          : "bg-[#00C853]/40 cursor-not-allowed opacity-50"}`}
+                    >
+                      {submitting ? "..." : "TIME IN"}
+                    </button>
+                  )}
+                  {(!routeMode || routeMode === "out") && (
+                    <button
+                      onClick={() => submitPunch("out")}
+                      disabled={!faceDetected || submitting}
+                      className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                        ${faceDetected && !submitting
+                          ? "bg-[#D50000] hover:bg-[#FF1744] active:scale-95"
+                          : "bg-[#D50000]/40 cursor-not-allowed opacity-50"}`}
+                    >
+                      {submitting ? "..." : "TIME OUT"}
+                    </button>
+                  )}
                 </div>
 
                 <button
