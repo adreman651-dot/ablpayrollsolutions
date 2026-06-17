@@ -65,17 +65,14 @@ export default function TimeIn() {
     return () => { stream?.getTracks().forEach(t => t.stop()); };
   }, []);
 
-  // Lookup employee name as code is entered
+  // Lookup employee name as code is entered (via secure RPC; no direct table access)
   useEffect(() => {
     if (!code) { setEmployeeName(""); return; }
     const lookup = code.startsWith("ABL-") ? code : "ABL-" + code.padStart(5, "0");
     const tid = setTimeout(async () => {
-      const { data } = await supabase
-        .from("employees")
-        .select("first_name, last_name")
-        .eq("employee_code", lookup)
-        .maybeSingle();
-      setEmployeeName(data ? `${data.first_name} ${data.last_name}`.toUpperCase() : "");
+      const { data } = await supabase.rpc("kiosk_lookup_employee", { _code: lookup });
+      const row = Array.isArray(data) ? data[0] : null;
+      setEmployeeName(row ? `${row.first_name} ${row.last_name}`.toUpperCase() : "");
     }, 200);
     return () => clearTimeout(tid);
   }, [code]);
