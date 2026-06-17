@@ -101,7 +101,8 @@ export function generatePayslipsPDF(payslips: PayslipData[]): jsPDF {
 
     const earnings: Array<[string, number]> = [
       ["Basic Salary", p.basicSalary],
-      ["Straight Time / Days Worked", p.straightTime],
+      ["Daily Rate", p.dailyRate || 0],
+      [`No. of days worked: ${p.daysWorked}`, 0], // The value is 0 here so we format differently later or just leave it
     ];
     if (p.holidayPay) earnings.push(["Holiday Pay", p.holidayPay]);
     if (p.riceAllowance) earnings.push(["Rice Allowance", p.riceAllowance]);
@@ -111,7 +112,11 @@ export function generatePayslipsPDF(payslips: PayslipData[]): jsPDF {
     }
     for (const [label, amount] of earnings) {
       doc.text(label, leftX, ly);
-      doc.text(peso(amount), leftAmtX, ly, { align: "right" });
+      if (label.startsWith("No. of days worked")) {
+         // Just the text
+      } else {
+         doc.text(peso(amount), leftAmtX, ly, { align: "right" });
+      }
       ly += 5;
     }
 
@@ -148,7 +153,7 @@ export function generatePayslipsPDF(payslips: PayslipData[]): jsPDF {
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold").setFontSize(12);
     doc.text("NET PAY", 20, netY + 7.5);
-    doc.text(peso(p.netPay), 190, netY + 7.5, { align: "right" });
+    doc.text(peso(Math.max(0, p.netPay)), 190, netY + 7.5, { align: "right" });
     doc.setTextColor(0, 0, 0);
 
     // ── Footer summary ──
