@@ -36,8 +36,10 @@ function VoiceUploadCard({ title, description, filename }: { title: string, desc
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.type !== "audio/mpeg") {
-      toast.error("Please upload an MP3 file");
+
+    const validTypes = ["audio/mpeg", "audio/mp3"];
+    if (!validTypes.includes(file.type) && !file.name.endsWith(".mp3")) {
+      toast.error("Please upload an MP3 file (.mp3)");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -47,12 +49,29 @@ function VoiceUploadCard({ title, description, filename }: { title: string, desc
 
     setIsUploading(true);
     try {
-      const { error } = await supabase.storage.from("voice-assets").upload(filename, file, { upsert: true });
-      if (error) throw error;
-      toast.success("Voice updated successfully");
+      // Remove old file first to avoid conflicts
+      await supabase.storage.from("voice-assets").remove([filename]).catch(() => {});
+
+      const { error } = await supabase.storage
+        .from("voice-assets")
+        .upload(filename, file, {
+          upsert: true,
+          cacheControl: "3600",
+          contentType: "audio/mpeg",
+        });
+      if (error) {
+        if (error.message?.includes("Bucket not found")) {
+          throw new Error("Storage bucket 'voice-assets' not found. Please run the latest DB migration in your Supabase dashboard.");
+        }
+        if (error.message?.includes("row-level security") || error.message?.includes("policy")) {
+          throw new Error("Permission denied. Make sure you are logged in as an admin.");
+        }
+        throw error;
+      }
+      toast.success(`${title} uploaded successfully!`);
       setHasFile(true);
     } catch (err: any) {
-      toast.error("Upload failed: " + err.message);
+      toast.error(err.message || "Upload failed");
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
