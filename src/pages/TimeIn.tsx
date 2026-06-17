@@ -97,6 +97,32 @@ export default function TimeIn() {
     return c.toDataURL("image/jpeg", 0.6);
   };
 
+  const speak = (text: string) => {
+    try {
+      if (!("speechSynthesis" in window)) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95; u.pitch = 1; u.volume = 1;
+      window.speechSynthesis.speak(u);
+    } catch {}
+  };
+
+  // Announce employee name as soon as it's resolved
+  useEffect(() => {
+    if (employeeName && code) {
+      const spelled = code.split("").join(" ");
+      speak(`Employee Code ${spelled}. Welcome ${employeeName}.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeName]);
+
+  // Local YYYY-MM-DD (not UTC) so cross-midnight time-ins work per calendar day
+  const localDateStr = (d = new Date()) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  };
+
   const submit = async () => {
     if (!code.trim()) { toast.error("Enter your Employee ID"); return; }
     setSubmitting(true);
@@ -109,7 +135,7 @@ export default function TimeIn() {
         .maybeSingle();
       if (!emp) { toast.error(`Employee ${lookup} not found`); return; }
 
-      const today = new Date().toISOString().split("T")[0];
+      const today = localDateStr();
       const { data: existing } = await supabase
         .from("attendance")
         .select("id, time_in, time_out")
