@@ -24,10 +24,13 @@ export type Database = {
           latitude: number | null
           longitude: number | null
           notes: string | null
+          overtime_minutes: number | null
           selfie_url: string | null
           status: string | null
           time_in: string | null
           time_out: string | null
+          total_hours_worked: number | null
+          undertime_minutes: number | null
         }
         Insert: {
           created_at?: string
@@ -38,10 +41,13 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           notes?: string | null
+          overtime_minutes?: number | null
           selfie_url?: string | null
           status?: string | null
           time_in?: string | null
           time_out?: string | null
+          total_hours_worked?: number | null
+          undertime_minutes?: number | null
         }
         Update: {
           created_at?: string
@@ -52,10 +58,13 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           notes?: string | null
+          overtime_minutes?: number | null
           selfie_url?: string | null
           status?: string | null
           time_in?: string | null
           time_out?: string | null
+          total_hours_worked?: number | null
+          undertime_minutes?: number | null
         }
         Relationships: [
           {
@@ -78,6 +87,7 @@ export type Database = {
           employee_code: string
           employment_status: string
           first_name: string
+          hdmf_schedule: string
           hire_date: string
           id: string
           job_title: string | null
@@ -86,10 +96,12 @@ export type Database = {
           middle_name: string | null
           pagibig_number: string | null
           payroll_type: string
+          phic_schedule: string
           philhealth_number: string | null
           phone: string | null
           profile_photo_url: string | null
           sss_number: string | null
+          sss_schedule: string
           tin_number: string | null
           updated_at: string
         }
@@ -103,6 +115,7 @@ export type Database = {
           employee_code: string
           employment_status?: string
           first_name: string
+          hdmf_schedule?: string
           hire_date?: string
           id?: string
           job_title?: string | null
@@ -111,10 +124,12 @@ export type Database = {
           middle_name?: string | null
           pagibig_number?: string | null
           payroll_type?: string
+          phic_schedule?: string
           philhealth_number?: string | null
           phone?: string | null
           profile_photo_url?: string | null
           sss_number?: string | null
+          sss_schedule?: string
           tin_number?: string | null
           updated_at?: string
         }
@@ -128,6 +143,7 @@ export type Database = {
           employee_code?: string
           employment_status?: string
           first_name?: string
+          hdmf_schedule?: string
           hire_date?: string
           id?: string
           job_title?: string | null
@@ -136,10 +152,12 @@ export type Database = {
           middle_name?: string | null
           pagibig_number?: string | null
           payroll_type?: string
+          phic_schedule?: string
           philhealth_number?: string | null
           phone?: string | null
           profile_photo_url?: string | null
           sss_number?: string | null
+          sss_schedule?: string
           tin_number?: string | null
           updated_at?: string
         }
@@ -276,6 +294,7 @@ export type Database = {
           id: string
           loan_type: string
           monthly_amortization: number
+          per_cutoff_amortization: number
           principal_amount: number
           remaining_balance: number
           start_date: string | null
@@ -290,6 +309,7 @@ export type Database = {
           id?: string
           loan_type: string
           monthly_amortization?: number
+          per_cutoff_amortization?: number
           principal_amount: number
           remaining_balance?: number
           start_date?: string | null
@@ -304,6 +324,7 @@ export type Database = {
           id?: string
           loan_type?: string
           monthly_amortization?: number
+          per_cutoff_amortization?: number
           principal_amount?: number
           remaining_balance?: number
           start_date?: string | null
@@ -409,6 +430,7 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          cutoff_type: string
           id: string
           notes: string | null
           period_end: string
@@ -420,6 +442,7 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          cutoff_type?: string
           id?: string
           notes?: string | null
           period_end: string
@@ -431,6 +454,7 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          cutoff_type?: string
           id?: string
           notes?: string | null
           period_end?: string
