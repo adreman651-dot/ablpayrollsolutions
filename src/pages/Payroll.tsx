@@ -615,7 +615,7 @@ export default function Payroll() {
                           value={ov.cash_advance}
                           onChange={e2 => setOverrides(prev => ({
                             ...prev,
-                            [item.employee_id]: { ...ov, cash_advance: parseFloat(e2.target.value) || 0 },
+                            [item.employee_id]: { employee_id: item.employee_id, other_deductions: ov.other_deductions, cash_advance: parseFloat(e2.target.value) || 0 },
                           }))}
                         />
                       </TableCell>
@@ -628,7 +628,7 @@ export default function Payroll() {
                           value={ov.other_deductions}
                           onChange={e2 => setOverrides(prev => ({
                             ...prev,
-                            [item.employee_id]: { ...ov, other_deductions: parseFloat(e2.target.value) || 0 },
+                            [item.employee_id]: { employee_id: item.employee_id, cash_advance: ov.cash_advance, other_deductions: parseFloat(e2.target.value) || 0 },
                           }))}
                         />
                       </TableCell>
