@@ -61,7 +61,22 @@ export default function Settings() {
       supabase.from("user_roles").select("user_id, role"),
     ]);
 
-    setSettings(settingsRes.data || []);
+    let currentSettings = settingsRes.data || [];
+    const voiceSetting = currentSettings.find(s => s.key === 'enable_voice_announcement');
+    
+    if (!voiceSetting) {
+      try {
+        await supabase.from("system_settings").insert([
+          { key: 'enable_voice_announcement', value: 'true', description: 'Enable Text-to-Speech automatic voice announcements for Attendance Kiosk' }
+        ]);
+        const refetch = await supabase.from("system_settings").select("*").order("key");
+        if (refetch.data) currentSettings = refetch.data;
+      } catch (err) {
+        console.error("Auto-init voice setting failed", err);
+      }
+    }
+
+    setSettings(currentSettings);
 
     const roleData = rolesRes.data || [];
     const userIds = [...new Set(roleData.map(r => r.user_id))];
@@ -363,14 +378,21 @@ export default function Settings() {
                 </div>
                 <Switch 
                   checked={settings.find(s => s.key === 'enable_voice_announcement')?.value === 'true'}
-                  onCheckedChange={(checked) => {
+                  onCheckedChange={async (checked) => {
                     const setting = settings.find(s => s.key === 'enable_voice_announcement');
                     if (setting) {
                       setSettings(prev => prev.map(p => p.id === setting.id ? { ...p, value: checked.toString() } : p));
                       updateSetting(setting.id, checked.toString());
                     } else {
-                      // If it doesn't exist yet, it means the migration hasn't been run or fetched.
-                      toast.error("Voice setting not found in database.");
+                      // Fallback auto-create if not found
+                      try {
+                        await supabase.from("system_settings").insert([
+                          { key: 'enable_voice_announcement', value: checked.toString(), description: 'Enable Text-to-Speech automatic voice announcements for Attendance Kiosk' }
+                        ]);
+                        fetchData();
+                      } catch (err) {
+                        console.error("Failed to create voice setting", err);
+                      }
                     }
                   }}
                 />

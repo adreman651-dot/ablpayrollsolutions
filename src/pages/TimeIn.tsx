@@ -238,6 +238,7 @@ export default function TimeIn() {
       window.speechSynthesis.speak(u);
     } catch (e) {
       console.error("Speech Synthesis failed", e);
+      if (type !== "greeting") toast.success("Voice service unavailable. Attendance recorded successfully.");
     }
   };
 
@@ -375,7 +376,39 @@ export default function TimeIn() {
         setSubmitting(false);
       }, 3000);
     } catch (e: any) {
-      toast.error(e.message || "Punch failed");
+      console.error("Attendance RPC Error:", e);
+      // Fallback: If the migration with 10 parameters isn't run, try the old 6 parameter signature so attendance is still saved.
+      if (e.message?.includes("Could not find the function") || e.message?.includes("kiosk_punch_v2")) {
+        try {
+          const { data, error } = await supabase.rpc("kiosk_punch_v2", {
+            _employee_id: employeeId,
+            _mode: selectedMode,
+            _latitude: location?.lat ?? null,
+            _longitude: location?.lng ?? null,
+            _photo_url: photoUrl,
+            _address: address || null,
+          });
+          if (!error && data?.ok) {
+            // Success with fallback
+            const timeStr = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
+            if (selectedMode === "in") speakAnnouncement("in", employeeName, employeeCodeStr, timeStr);
+            else speakAnnouncement("out", employeeName, employeeCodeStr, timeStr);
+            setSuccessInfo({ name: employeeName, time: timeStr, mode: selectedMode });
+            setPhase("success");
+            setTimeout(() => {
+              setPhase("active");
+              resetKiosk();
+              setSuccessInfo(null);
+              setSubmitting(false);
+            }, 3000);
+            return;
+          }
+        } catch (fallbackError) {
+          console.error("Fallback RPC Error:", fallbackError);
+        }
+      }
+      
+      toast.error("Attendance save failed. Please try again.");
       setSubmitting(false);
     }
   };
