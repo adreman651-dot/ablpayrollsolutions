@@ -12,6 +12,7 @@ export interface PayslipData {
   location?: string;
   bankAccount?: string;
   basicSalary: number;
+  dailyRate?: number;
   daysWorked: number;
   hoursWorked: number;
   straightTime: number;
@@ -21,6 +22,7 @@ export interface PayslipData {
   phic: number;
   sss: number;
   netTaxable: number;
+  cashAdvance?: number;
   otherDeductions: number;
   totalDeductions: number;
   riceAllowance?: number;
@@ -286,9 +288,9 @@ export function generatePayslipsPDF(payslips: PayslipData[]): jsPDF {
     // Separator between slips
     if (index % slipsPerPage === 0 && index < payslips.length - 1) {
       doc.setDrawColor(150);
-      doc.setLineDash([2, 2], 0);
+      doc.setLineDashPattern([2, 2], 0);
       doc.line(15, yOffset + slipHeight - 5, 195, yOffset + slipHeight - 5);
-      doc.setLineDash([], 0);
+      doc.setLineDashPattern([], 0);
     }
   });
 
