@@ -431,6 +431,8 @@ export default function Payroll() {
         cashAdvance: item.cash_advance || 0,
         totalNonTaxable: item.allowances || 0,
         netPay: item.net_pay,
+        grossPay: item.gross_pay,
+        withholdingTax: item.withholding_tax,
         ytdIncomeTxNtx: 0, ytdIncomeTx: 0, ytdIncomeNtx: 0, ytd13thMonth: 0,
         workDetails: [],
       };
