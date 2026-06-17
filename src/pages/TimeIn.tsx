@@ -125,73 +125,28 @@ export default function TimeIn() {
     setSubmitting(true);
     try {
       const lookup = "ABL-" + code.padStart(5, "0");
-      const { data: emp } = await supabase
-        .from("employees")
-        .select("id, first_name, last_name, employee_code")
-        .eq("employee_code", lookup)
-        .maybeSingle();
-      if (!emp) { toast.error(`Employee ${lookup} not found`); return; }
-
-      const today = localDateStr();
-      const { data: existing } = await supabase
-        .from("attendance")
-        .select("id, time_in, time_out")
-        .eq("employee_id", emp.id)
-        .eq("date", today)
-        .maybeSingle();
-
-      const stamp = new Date().toISOString();
       const selfie = captureSelfie();
-      const lat = location?.lat ?? null;
-      const lng = location?.lng ?? null;
+      const { data, error } = await supabase.rpc("kiosk_punch", {
+        _code: lookup,
+        _mode: mode,
+        _latitude: location?.lat ?? null,
+        _longitude: location?.lng ?? null,
+        _selfie: selfie,
+        _address: address || null,
+      });
+      if (error) { toast.error(error.message); return; }
+      const res = data as { ok?: boolean; error?: string; first_name?: string; last_name?: string; late_minutes?: number } | null;
+      if (!res?.ok) { toast.error(res?.error || "Punch failed"); return; }
 
+      const fn = res.first_name ?? "";
+      const ln = res.last_name ?? "";
       if (mode === "in") {
-        if (existing) { toast.error("Already timed in today"); return; }
-        const { data: settings } = await supabase
-          .from("system_settings").select("value").eq("key", "cutoff_time").maybeSingle();
-        let lateMinutes = 0;
-        if (settings?.value) {
-          const [h, m] = String(settings.value).split(":").map(Number);
-          const cutoff = new Date(); cutoff.setHours(h, m, 0, 0);
-          if (new Date() > cutoff) lateMinutes = Math.ceil((Date.now() - cutoff.getTime()) / 60000);
-        }
-        const { error } = await supabase.from("attendance").insert({
-          employee_id: emp.id, date: today, time_in: stamp,
-          latitude: lat, longitude: lng,
-          selfie_url: selfie,
-          late_minutes: lateMinutes,
-          status: lateMinutes > 0 ? "late" : "present",
-          notes: address || null,
-        });
-        if (error) { toast.error(error.message); return; }
-        toast.success(`${emp.first_name} Successfully timed in!${lateMinutes ? ` (${lateMinutes}m late)` : ""}`);
-        speak(`Welcome ${emp.first_name} ${emp.last_name}. Your Time In has been recorded.`);
+        const late = res.late_minutes ?? 0;
+        toast.success(`${fn} Successfully timed in!${late ? ` (${late}m late)` : ""}`);
+        speak(`Welcome ${fn} ${ln}. Your Time In has been recorded.`);
       } else {
-        if (!existing) { toast.error("No time-in record for today"); return; }
-        if (existing.time_out) { toast.error("Already timed out today"); return; }
-        
-        const timeIn = new Date(existing.time_in);
-        const timeOut = new Date(stamp);
-        const diffMs = timeOut.getTime() - timeIn.getTime();
-        let totalHours = diffMs / (1000 * 60 * 60);
-        
-        if (totalHours > 5) totalHours -= 1;
-        
-        const overtimeMinutes = totalHours > 8 ? Math.round((totalHours - 8) * 60) : 0;
-        const undertimeMinutes = totalHours < 8 && totalHours > 0 ? Math.round((8 - totalHours) * 60) : 0;
-
-        const { error } = await supabase.from("attendance")
-          .update({ 
-            time_out: stamp, 
-            selfie_url: selfie || undefined,
-            total_hours_worked: Math.max(0, parseFloat(totalHours.toFixed(2))),
-            overtime_minutes: overtimeMinutes,
-            undertime_minutes: undertimeMinutes
-          }).eq("id", existing.id);
-          
-        if (error) { toast.error(error.message); return; }
-        toast.success(`${emp.first_name} Successfully timed out!`);
-        speak(`Thank you ${emp.first_name} ${emp.last_name}. Your Time Out has been recorded.`);
+        toast.success(`${fn} Successfully timed out!`);
+        speak(`Thank you ${fn} ${ln}. Your Time Out has been recorded.`);
       }
       setCode("");
     } finally {
