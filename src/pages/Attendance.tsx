@@ -24,6 +24,9 @@ interface AttendanceRecord {
   location_label_out: string | null;
   status: string | null;
   total_hours: number | null;
+  employee_code: string | null;
+  employee_name: string | null;
+  device_type: string | null;
   employees?: { first_name: string; last_name: string; employee_code: string };
 }
 
@@ -80,14 +83,14 @@ export default function Attendance() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Employee</TableHead>
+              <TableHead className="text-center w-16">Photo</TableHead>
+              <TableHead>Employee Code</TableHead>
+              <TableHead>Employee Name</TableHead>
               <TableHead>Time In</TableHead>
               <TableHead>Time Out</TableHead>
-              <TableHead>Total Hours</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Device Used</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Time In Location</TableHead>
-              <TableHead>Time Out Location</TableHead>
-              <TableHead className="text-center">Photo</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -98,32 +101,16 @@ export default function Attendance() {
             ) : (
               records.map(r => (
                 <TableRow key={r.id}>
-                  <TableCell className="font-medium">
-                    {r.employees ? `${r.employees.first_name} ${r.employees.last_name}` : "—"}
-                    <span className="block text-xs text-muted-foreground">{r.employees?.employee_code}</span>
-                  </TableCell>
-                  <TableCell>{r.time_in ? new Date(r.time_in).toLocaleTimeString() : "—"}</TableCell>
-                  <TableCell>{r.time_out ? new Date(r.time_out).toLocaleTimeString() : "—"}</TableCell>
-                  <TableCell>{r.total_hours ? parseFloat(r.total_hours.toString()).toFixed(2) : "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={r.status === 'On Time' || r.status === 'present' ? "default" : r.status === 'Late' || r.status === 'late' ? "secondary" : "destructive"}>
-                      {r.status || "—"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    <LocationCell label={r.location_label_in} lat={r.latitude_in} lng={r.longitude_in} />
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    <LocationCell label={r.location_label_out} lat={r.latitude_out} lng={r.longitude_out} />
-                  </TableCell>
                   <TableCell className="text-center">
                     {(r.photo_in_url || r.photo_out_url) ? (
                       <button 
                         onClick={() => setSelfieModal(r)}
-                        className="inline-flex w-8 h-8 rounded-full bg-muted border items-center justify-center overflow-hidden hover:ring-2 ring-primary/50 transition-all"
+                        className="inline-flex w-10 h-10 rounded-lg bg-muted border items-center justify-center overflow-hidden hover:ring-2 ring-primary/50 transition-all"
                       >
                         {r.photo_in_url ? (
                           <img src={r.photo_in_url} alt="Selfie" className="w-full h-full object-cover" />
+                        ) : r.photo_out_url ? (
+                          <img src={r.photo_out_url} alt="Selfie" className="w-full h-full object-cover" />
                         ) : (
                           <ImageIcon className="w-4 h-4 text-muted-foreground" />
                         )}
@@ -131,6 +118,35 @@ export default function Attendance() {
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
+                  </TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {r.employees?.employee_code || r.employee_code || "—"}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {r.employees ? `${r.employees.first_name} ${r.employees.last_name}` : r.employee_name || "—"}
+                  </TableCell>
+                  <TableCell>
+                    {r.time_in ? new Date(r.time_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
+                    {r.location_label_in && (
+                       <div className="text-[10px] text-muted-foreground truncate max-w-[150px] flex items-center gap-1 mt-1" title={r.location_label_in}>
+                         <MapPin className="w-3 h-3" /> {r.location_label_in}
+                       </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {r.time_out ? new Date(r.time_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
+                    {r.location_label_out && (
+                       <div className="text-[10px] text-muted-foreground truncate max-w-[150px] flex items-center gap-1 mt-1" title={r.location_label_out}>
+                         <MapPin className="w-3 h-3" /> {r.location_label_out}
+                       </div>
+                    )}
+                  </TableCell>
+                  <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
+                  <TableCell>{r.device_type || "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant={r.status === 'On Time' || r.status === 'present' ? "default" : r.status === 'Late' || r.status === 'late' ? "secondary" : "destructive"}>
+                      {r.status || "—"}
+                    </Badge>
                   </TableCell>
                 </TableRow>
               ))

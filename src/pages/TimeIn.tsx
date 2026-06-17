@@ -250,9 +250,8 @@ export default function TimeIn() {
 
     // Check today's attendance using public RPC
     const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employee.id });
-    if (!attData?.has_record || !attData?.time_in) setMode("in");
-    else if (attData?.time_in && !attData?.time_out) setMode("out");
-    else setMode("in");
+    // We no longer auto-set the mode. Let the user choose via the buttons.
+    setMode(null);
 
     await playVoiceAsset("greeting.mp3", `Hello, ${employee.first_name}!`);
     setEnableFaceGate(true);
@@ -295,33 +294,43 @@ export default function TimeIn() {
   };
 
   // ─── Submit punch ─────────────────────────────────────────────────────────
-  const submitPunch = async () => {
-    if (!faceDetected || !employeeId || !mode) return;
+  const submitPunch = async (selectedMode: Mode) => {
+    if (!faceDetected || !employeeId) return;
     setSubmitting(true);
+    setMode(selectedMode);
 
     const selfieBase64 = captureSelfie();
     let photoUrl: string | null = null;
     if (selfieBase64) photoUrl = await uploadSelfie(selfieBase64, employeeId);
 
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const deviceType = isMobile ? "Mobile" : "Desktop";
+    const deviceTimestamp = new Date().toISOString();
+    const employeeCodeStr = "ABL-" + code.padStart(5, "0");
+
     try {
       const { data, error } = await supabase.rpc("kiosk_punch_v2", {
         _employee_id: employeeId,
-        _mode: mode,
+        _mode: selectedMode,
         _latitude: location?.lat ?? null,
         _longitude: location?.lng ?? null,
         _photo_url: photoUrl,
         _address: address || null,
+        _employee_code: employeeCodeStr,
+        _employee_name: employeeName,
+        _device_type: deviceType,
+        _device_timestamp: deviceTimestamp
       });
 
       if (error) throw error;
       const res = data as any;
       if (!res?.ok) throw new Error(res?.error || "Punch failed");
 
-      if (mode === "in") playVoiceAsset("timein_success.mp3", "Successfully timed in!");
+      if (selectedMode === "in") playVoiceAsset("timein_success.mp3", "Successfully timed in!");
       else playVoiceAsset("timeout_success.mp3", "Successfully timed out!");
 
       const timeStr = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
-      setSuccessInfo({ name: employeeName, time: timeStr, mode });
+      setSuccessInfo({ name: employeeName, time: timeStr, mode: selectedMode });
       setPhase("success");
 
       setTimeout(() => {
@@ -422,16 +431,28 @@ export default function TimeIn() {
                   {faceDetected ? "✓ Face Detected — Ready" : "Align face in frame…"}
                 </div>
 
-                <button
-                  onClick={submitPunch}
-                  disabled={!faceDetected || submitting}
-                  className={`px-14 py-5 rounded-full text-2xl font-bold tracking-widest text-white shadow-2xl transition-all
-                    ${faceDetected && !submitting
-                      ? "bg-[#3D2DBF] hover:bg-[#4A38E0] active:scale-95"
-                      : "bg-[#3D2DBF]/40 cursor-not-allowed opacity-50"}`}
-                >
-                  {submitting ? "PROCESSING…" : `TIME ${mode?.toUpperCase()}`}
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => submitPunch("in")}
+                    disabled={!faceDetected || submitting}
+                    className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                      ${faceDetected && !submitting
+                        ? "bg-[#00C853] hover:bg-[#00E676] active:scale-95"
+                        : "bg-[#00C853]/40 cursor-not-allowed opacity-50"}`}
+                  >
+                    {submitting ? "..." : "TIME IN"}
+                  </button>
+                  <button
+                    onClick={() => submitPunch("out")}
+                    disabled={!faceDetected || submitting}
+                    className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                      ${faceDetected && !submitting
+                        ? "bg-[#D50000] hover:bg-[#FF1744] active:scale-95"
+                        : "bg-[#D50000]/40 cursor-not-allowed opacity-50"}`}
+                  >
+                    {submitting ? "..." : "TIME OUT"}
+                  </button>
+                </div>
 
                 <button
                   onClick={resetKiosk}
