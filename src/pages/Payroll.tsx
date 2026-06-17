@@ -175,7 +175,7 @@ export default function Payroll() {
       const pagibigOverrides = { employee: pagibigMap.pagibig_employee || 400, employer: pagibigMap.pagibig_employer || 400 };
 
       const { data: employees, error: empErr } = await supabase.from("employees")
-        .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule").eq("employment_status", "active");
+        .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution").eq("employment_status", "active");
       if (empErr) throw empErr;
       if (!employees?.length) { toast.error("No active employees"); return; }
 
@@ -245,9 +245,14 @@ export default function Payroll() {
         const ph = computePhilHealth(monthlySalary);
         const pi = computePagIBIG(monthlySalary, pagibigOverrides);
 
-        const sssEE = shouldDeductSSS ? +(sss.employee * cycleFactor).toFixed(2) : 0;
-        const phEE = shouldDeductPHIC ? +(ph.employee * cycleFactor).toFixed(2) : 0;
-        const piEE = shouldDeductHDMF ? +(pi.employee * cycleFactor).toFixed(2) : 0;
+        // Per-employee manual contribution overrides (>0 means use that fixed monthly amount)
+        const sssMonthly = (emp as any).sss_contribution > 0 ? (emp as any).sss_contribution : sss.employee;
+        const phMonthly = (emp as any).phic_contribution > 0 ? (emp as any).phic_contribution : ph.employee;
+        const piMonthly = (emp as any).hdmf_contribution > 0 ? (emp as any).hdmf_contribution : pi.employee;
+
+        const sssEE = shouldDeductSSS ? +(sssMonthly * cycleFactor).toFixed(2) : 0;
+        const phEE = shouldDeductPHIC ? +(phMonthly * cycleFactor).toFixed(2) : 0;
+        const piEE = shouldDeductHDMF ? +(piMonthly * cycleFactor).toFixed(2) : 0;
 
         const taxableIncome = Math.max(0, grossPay - absenceDeductions - lateDeductions - sssEE - phEE - piEE);
         const tax = computeWithholdingTax(taxableIncome);
