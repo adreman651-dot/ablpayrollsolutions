@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
-import Index from "./pages/Index";
+import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
 import TimeIn from "./pages/TimeIn";
 import Dashboard from "./pages/Dashboard";
@@ -36,9 +36,19 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<Auth />} />
+            {/* Landing Page — always shown first, no auth required */}
+            <Route path="/" element={<Landing />} />
+
+            {/* Kiosk routes — no auth required */}
+            <Route path="/time-in" element={<TimeIn />} />
+            <Route path="/time-out" element={<TimeIn />} />
+            {/* Legacy /timein route still works */}
             <Route path="/timein" element={<TimeIn />} />
+
+            {/* Admin Login */}
+            <Route path="/auth" element={<Auth />} />
+
+            {/* Protected Admin Routes */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/employees" element={<Employees />} />
@@ -49,6 +59,7 @@ const App = () => (
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

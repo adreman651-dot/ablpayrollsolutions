@@ -39,6 +39,12 @@ export default function Auth() {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
+      {/* Back to Home */}
+      <Link to="/" className="fixed top-4 left-4 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M19 12H5"/><path d="m12 5-7 7 7 7"/></svg>
+        Back to Home
+      </Link>
+
       <div className="w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary mb-4">
@@ -69,9 +75,14 @@ export default function Auth() {
             </form>
             <div className="mt-6 pt-4 border-t border-border text-center">
               <p className="text-sm text-muted-foreground mb-2">Are you an employee?</p>
-              <Link to="/timein">
-                <Button variant="outline" className="w-full">Go to Employee Time In / Out</Button>
-              </Link>
+              <div className="flex gap-2">
+                <Link to="/time-in" className="flex-1">
+                  <Button variant="outline" className="w-full text-emerald-600 border-emerald-200 hover:bg-emerald-50">Time In</Button>
+                </Link>
+                <Link to="/time-out" className="flex-1">
+                  <Button variant="outline" className="w-full text-red-600 border-red-200 hover:bg-red-50">Time Out</Button>
+                </Link>
+              </div>
             </div>
           </CardContent>
         </Card>

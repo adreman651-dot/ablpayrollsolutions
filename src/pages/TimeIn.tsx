@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "in" | "out";
@@ -27,6 +28,11 @@ const playErrorBeep = () => {
 };
 
 export default function TimeIn() {
+  const locationRoute = useLocation();
+  const navigate = useNavigate();
+  // Determine initial mode from route: /time-in = "in", /time-out = "out"
+  const routeMode: Mode | null = locationRoute.pathname === "/time-out" ? "out" : locationRoute.pathname === "/time-in" ? "in" : null;
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -39,7 +45,7 @@ export default function TimeIn() {
   const [submitting, setSubmitting] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [address, setAddress] = useState<string>("");
-  const [mode, setMode] = useState<Mode | null>(null);
+  const [mode, setMode] = useState<Mode | null>(routeMode);
   const [cameraReady, setCameraReady] = useState(false);
   const [shake, setShake] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
@@ -417,6 +423,13 @@ export default function TimeIn() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black text-white select-none">
+      {/* Back to Home button */}
+      <button
+        onClick={() => navigate("/")}
+        className="fixed top-4 left-4 z-50 flex items-center gap-2 px-3 py-2 rounded-xl bg-black/50 backdrop-blur border border-white/10 text-white/70 hover:text-white hover:bg-black/70 transition-all text-sm"
+      >
+        <ArrowLeft className="w-4 h-4" /> Home
+      </button>
       {/* LAYER 1: Fullscreen Camera */}
       <video
         ref={videoRef}
