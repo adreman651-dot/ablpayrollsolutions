@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Camera, MapPin, Clock } from "lucide-react";
+import { MapPin, Image as ImageIcon, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -14,26 +14,27 @@ interface AttendanceRecord {
   date: string;
   time_in: string | null;
   time_out: string | null;
-  late_minutes: number;
-  status: string;
-  latitude: number | null;
-  longitude: number | null;
-  exact_location: string | null;
-  attendance_type: string | null;
+  photo_in_url: string | null;
+  photo_out_url: string | null;
+  latitude_in: number | null;
+  longitude_in: number | null;
+  latitude_out: number | null;
+  longitude_out: number | null;
+  location_label_in: string | null;
+  location_label_out: string | null;
+  status: string | null;
+  total_hours: number | null;
   employees?: { first_name: string; last_name: string; employee_code: string };
 }
 
 export default function Attendance() {
-  const { hasRole, employeeId } = useAuth();
+  const { hasRole } = useAuth();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [employeeCode, setEmployeeCode] = useState("");
-  const [capturing, setCapturing] = useState(false);
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split("T")[0]);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
-  const canManage = hasRole("admin") || hasRole("hr");
+  
+  // Selfie Modal State
+  const [selfieModal, setSelfieModal] = useState<AttendanceRecord | null>(null);
 
   const fetchAttendance = async () => {
     let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code)").eq("date", dateFilter).order("time_in", { ascending: false });
@@ -45,144 +46,32 @@ export default function Attendance() {
 
   useEffect(() => { fetchAttendance(); }, [dateFilter]);
 
-  const startCamera = () => {
-    setCapturing(true);
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-      .then(stream => {
-        streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      })
-      .catch(() => toast.error("Camera access denied"));
-  };
-
-  const stopCamera = () => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
-    setCapturing(false);
-  };
-
-  const handleClockIn = async () => {
-    if (!employeeCode.trim()) { toast.error("Please enter employee code"); return; }
-
-    // Lookup employee
-    const { data: emp, error: empErr } = await supabase.from("employees")
-      .select("id, basic_salary").eq("employee_code", employeeCode.trim()).single();
-    if (empErr || !emp) { toast.error("Employee not found"); return; }
-
-    // Get GPS
-    let lat: number | null = null, lng: number | null = null;
-    try {
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 })
-      );
-      lat = pos.coords.latitude;
-      lng = pos.coords.longitude;
-    } catch { /* GPS optional */ }
-
-    const now = new Date();
-    const today = now.toISOString().split("T")[0];
-
-    // Check existing record
-    const { data: existing } = await supabase.from("attendance")
-      .select("id, time_in, time_out").eq("employee_id", emp.id).eq("date", today).maybeSingle();
-
-    if (existing && !existing.time_out) {
-      // Clock out
-      const timeIn = new Date(existing.time_in);
-      const diffMs = now.getTime() - timeIn.getTime();
-      let totalHours = diffMs / (1000 * 60 * 60);
-      
-      // Deduct 1 hour break if they worked more than 5 hours
-      if (totalHours > 5) totalHours -= 1;
-      
-      const overtimeMinutes = totalHours > 8 ? Math.round((totalHours - 8) * 60) : 0;
-      const undertimeMinutes = totalHours < 8 && totalHours > 0 ? Math.round((8 - totalHours) * 60) : 0;
-
-      const { error } = await supabase.from("attendance").update({
-        time_out: now.toISOString(),
-        total_hours_worked: Math.max(0, parseFloat(totalHours.toFixed(2))),
-        overtime_minutes: overtimeMinutes,
-        undertime_minutes: undertimeMinutes,
-      }).eq("id", existing.id);
-      if (error) toast.error(error.message);
-      else toast.success("Clocked out successfully! Total hours: " + totalHours.toFixed(2));
-    } else if (existing && existing.time_out) {
-      toast.error("Already clocked in and out today");
-    } else {
-      // Clock in — compute late minutes
-      const { data: settings } = await supabase.from("system_settings")
-        .select("value").eq("key", "cutoff_time").single();
-      let lateMinutes = 0;
-      if (settings) {
-        const [cutH, cutM] = settings.value.split(":").map(Number);
-        const cutoff = new Date(now);
-        cutoff.setHours(cutH, cutM, 0, 0);
-        if (now > cutoff) {
-          lateMinutes = Math.ceil((now.getTime() - cutoff.getTime()) / 60000);
-        }
-      }
-
-      const { error } = await supabase.from("attendance").insert({
-        employee_id: emp.id,
-        date: today,
-        time_in: now.toISOString(),
-        latitude: lat,
-        longitude: lng,
-        late_minutes: lateMinutes,
-        status: lateMinutes > 0 ? "late" : "present",
-      });
-      if (error) toast.error(error.message);
-      else toast.success(lateMinutes > 0 ? `Clocked in (${lateMinutes} min late)` : "Clocked in on time!");
-    }
-
-    stopCamera();
-    setEmployeeCode("");
-    fetchAttendance();
+  const LocationCell = ({ label, lat, lng }: { label: string | null, lat: number | null, lng: number | null }) => {
+    if (!lat || !lng) return <span className="text-muted-foreground">—</span>;
+    const gmapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+    const displayLabel = label || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    
+    return (
+      <a 
+        href={gmapsUrl} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="flex items-center gap-1 hover:text-primary transition-colors group"
+        title={displayLabel}
+      >
+        <MapPin className="w-3 h-3 text-muted-foreground group-hover:text-primary" />
+        <span className="truncate max-w-[150px] inline-block align-bottom">{displayLabel}</span>
+      </a>
+    );
   };
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Attendance</h1>
-        <p className="page-description">Track daily time-in and time-out</p>
+        <h1 className="page-title">Daily Logs</h1>
+        <p className="page-description">Track daily time-in and time-out with GPS and selfies</p>
       </div>
 
-      {/* Clock In/Out Section */}
-      <div className="stat-card mb-6">
-        <h3 className="font-display font-semibold mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-primary" /> Clock In / Out
-        </h3>
-        <div className="flex flex-col sm:flex-row gap-4 items-start">
-          <div className="flex-1 space-y-3">
-            <Input
-              placeholder="Enter Employee Code (e.g., ABL-00001)"
-              value={employeeCode}
-              onChange={e => setEmployeeCode(e.target.value)}
-            />
-            <div className="flex gap-2">
-              {!capturing ? (
-                <Button onClick={startCamera} variant="outline">
-                  <Camera className="w-4 h-4 mr-2" /> Open Camera
-                </Button>
-              ) : (
-                <>
-                  <Button onClick={handleClockIn}>
-                    <MapPin className="w-4 h-4 mr-2" /> Record Time
-                  </Button>
-                  <Button variant="outline" onClick={stopCamera}>Cancel</Button>
-                </>
-              )}
-            </div>
-          </div>
-          {capturing && (
-            <div className="w-64 h-48 rounded-lg overflow-hidden bg-muted">
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Records */}
       <div className="flex items-center gap-3 mb-4">
         <Input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="w-48" />
       </div>
@@ -194,16 +83,18 @@ export default function Attendance() {
               <TableHead>Employee</TableHead>
               <TableHead>Time In</TableHead>
               <TableHead>Time Out</TableHead>
-              <TableHead>Late (min)</TableHead>
+              <TableHead>Total Hours</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="min-w-[200px]">Exact Location</TableHead>
+              <TableHead>Time In Location</TableHead>
+              <TableHead>Time Out Location</TableHead>
+              <TableHead className="text-center">Photo</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
             ) : records.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-12 text-muted-foreground">No records for this date</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">No records for this date</TableCell></TableRow>
             ) : (
               records.map(r => (
                 <TableRow key={r.id}>
@@ -213,18 +104,33 @@ export default function Attendance() {
                   </TableCell>
                   <TableCell>{r.time_in ? new Date(r.time_in).toLocaleTimeString() : "—"}</TableCell>
                   <TableCell>{r.time_out ? new Date(r.time_out).toLocaleTimeString() : "—"}</TableCell>
-                  <TableCell>{r.late_minutes > 0 ? r.late_minutes : "—"}</TableCell>
+                  <TableCell>{r.total_hours ? parseFloat(r.total_hours.toString()).toFixed(2) : "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={r.status === "present" ? "default" : r.status === "late" ? "secondary" : "destructive"}>
-                      {r.status}
+                    <Badge variant={r.status === 'On Time' || r.status === 'present' ? "default" : r.status === 'Late' || r.status === 'late' ? "secondary" : "destructive"}>
+                      {r.status || "—"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {r.exact_location ? (
-                      <div className="line-clamp-2" title={r.exact_location}>{r.exact_location}</div>
-                    ) : r.latitude && r.longitude ? (
-                      `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`
-                    ) : "—"}
+                  <TableCell className="text-xs">
+                    <LocationCell label={r.location_label_in} lat={r.latitude_in} lng={r.longitude_in} />
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <LocationCell label={r.location_label_out} lat={r.latitude_out} lng={r.longitude_out} />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {(r.photo_in_url || r.photo_out_url) ? (
+                      <button 
+                        onClick={() => setSelfieModal(r)}
+                        className="inline-flex w-8 h-8 rounded-full bg-muted border items-center justify-center overflow-hidden hover:ring-2 ring-primary/50 transition-all"
+                      >
+                        {r.photo_in_url ? (
+                          <img src={r.photo_in_url} alt="Selfie" className="w-full h-full object-cover" />
+                        ) : (
+                          <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -232,6 +138,68 @@ export default function Attendance() {
           </TableBody>
         </Table>
       </div>
+
+      {/* Selfie Modal */}
+      {selfieModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-card max-w-2xl w-full rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-border flex justify-between items-center">
+              <div>
+                <h3 className="font-semibold text-lg">{selfieModal.employees?.first_name} {selfieModal.employees?.last_name}</h3>
+                <p className="text-sm text-muted-foreground">{new Date(selfieModal.date).toLocaleDateString()}</p>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setSelfieModal(null)}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {/* Time In */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-sm text-primary">TIME IN</h4>
+                  <span className="text-xs font-mono">{selfieModal.time_in ? new Date(selfieModal.time_in).toLocaleTimeString() : "—"}</span>
+                </div>
+                <div className="aspect-[3/4] rounded-xl overflow-hidden bg-muted flex items-center justify-center relative">
+                  {selfieModal.photo_in_url ? (
+                    <img src={selfieModal.photo_in_url} alt="Time In Selfie" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-muted-foreground flex flex-col items-center">
+                      <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                      <span className="text-sm">No Photo</span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground leading-tight p-2 bg-muted/50 rounded-lg">
+                  <MapPin className="w-3 h-3 inline mr-1 mb-0.5" />
+                  {selfieModal.location_label_in || "No location recorded"}
+                </div>
+              </div>
+              
+              {/* Time Out */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-sm text-primary">TIME OUT</h4>
+                  <span className="text-xs font-mono">{selfieModal.time_out ? new Date(selfieModal.time_out).toLocaleTimeString() : "—"}</span>
+                </div>
+                <div className="aspect-[3/4] rounded-xl overflow-hidden bg-muted flex items-center justify-center relative">
+                  {selfieModal.photo_out_url ? (
+                    <img src={selfieModal.photo_out_url} alt="Time Out Selfie" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-muted-foreground flex flex-col items-center">
+                      <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                      <span className="text-sm">No Photo</span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground leading-tight p-2 bg-muted/50 rounded-lg">
+                  <MapPin className="w-3 h-3 inline mr-1 mb-0.5" />
+                  {selfieModal.location_label_out || "No location recorded"}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

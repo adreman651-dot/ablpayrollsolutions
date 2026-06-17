@@ -11,6 +11,144 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/payroll-utils";
+import { Play, Square, FileAudio, Info } from "lucide-react";
+
+function VoiceUploadCard({ title, description, filename }: { title: string, description: string, filename: string }) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [hasFile, setHasFile] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    checkFile();
+  }, []);
+
+  const checkFile = async () => {
+    const { data } = await supabase.storage.from("voice-assets").list("", { search: filename });
+    if (data && data.some(f => f.name === filename)) {
+      setHasFile(true);
+    } else {
+      setHasFile(false);
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "audio/mpeg") {
+      toast.error("Please upload an MP3 file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size must be less than 5MB");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const { error } = await supabase.storage.from("voice-assets").upload(filename, file, { upsert: true });
+      if (error) throw error;
+      toast.success("Voice updated successfully");
+      setHasFile(true);
+    } catch (err: any) {
+      toast.error("Upload failed: " + err.message);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemove = async () => {
+    try {
+      await supabase.storage.from("voice-assets").remove([filename]);
+      toast.success("Voice removed successfully");
+      setHasFile(false);
+      if (isPlaying) {
+        audioRef.current?.pause();
+        setIsPlaying(false);
+      }
+    } catch (err: any) {
+      toast.error("Remove failed: " + err.message);
+    }
+  };
+
+  const handlePreview = async () => {
+    if (isPlaying) {
+      audioRef.current?.pause();
+      setIsPlaying(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from("voice-assets").getPublicUrl(filename);
+    if (data.publicUrl) {
+      const audio = new Audio(`${data.publicUrl}?t=${Date.now()}`);
+      audioRef.current = audio;
+      audio.onended = () => setIsPlaying(false);
+      audio.play().catch(() => toast.error("Could not play audio"));
+      setIsPlaying(true);
+    }
+  };
+
+  return (
+    <div className="border border-border rounded-xl p-5 bg-card flex flex-col gap-4">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-primary/10 rounded-lg text-primary">
+            <FileAudio className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-semibold">{title}</h4>
+            <p className="text-sm text-muted-foreground">{description}</p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="bg-muted/30 p-3 rounded-lg text-sm flex items-center justify-between">
+        <span className="text-muted-foreground">Current:</span>
+        <span className="font-mono font-medium">{hasFile ? `${filename}` : "Using TTS"}</span>
+      </div>
+
+      <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
+        <Button 
+          variant={isPlaying ? "destructive" : "secondary"} 
+          size="sm" 
+          onClick={handlePreview}
+          disabled={!hasFile}
+          className="flex-1 min-w-[100px]"
+        >
+          {isPlaying ? <><Square className="w-4 h-4 mr-2" /> Stop</> : <><Play className="w-4 h-4 mr-2" /> Preview</>}
+        </Button>
+        <input 
+          type="file" 
+          accept="audio/mpeg" 
+          className="hidden" 
+          ref={fileInputRef} 
+          onChange={handleUpload} 
+        />
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className="flex-1 min-w-[120px]"
+        >
+          <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Uploading..." : "Upload MP3"}
+        </Button>
+        {hasFile && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handleRemove}
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive flex-1 min-w-[100px]"
+          >
+            <Trash2 className="w-4 h-4 mr-2" /> Remove
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface Setting {
   id: string;
@@ -345,76 +483,32 @@ export default function Settings() {
         <TabsContent value="voice" className="mt-0">
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
             <div className="p-4 border-b border-border">
-              <h3 className="font-display font-semibold">Voice Settings</h3>
-              <p className="text-sm text-muted-foreground mt-1">Configure hybrid voice prompts for the Employee Time In/Out Kiosk.</p>
+              <h3 className="font-display font-semibold">Kiosk Voice Settings</h3>
+              <p className="text-sm text-muted-foreground mt-1">Upload custom MP3 voice clips for the Time In/Out kiosk. If no file is uploaded, the system will use the built-in text-to-speech voice.</p>
             </div>
-            <div className="p-6 flex flex-col gap-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
-                {(() => {
-                  const useCustom = settings.find(s => s.key === "voice_use_custom");
-                  const fallback = settings.find(s => s.key === "voice_fallback_tts");
-                  return (
-                    <>
-                      <div className="space-y-2">
-                        <Label className="font-medium">Use Custom MP3 Voice Prompts</Label>
-                        <Select 
-                          value={useCustom?.value || "false"} 
-                          onValueChange={v => {
-                            if (useCustom) updateSetting(useCustom.id, v);
-                            else toast.info("Setting not initialized in DB yet.");
-                          }}
-                        >
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="true">Yes</SelectItem>
-                            <SelectItem value="false">No</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="font-medium">Fallback to Text-to-Speech</Label>
-                        <Select 
-                          value={fallback?.value || "true"} 
-                          onValueChange={v => {
-                            if (fallback) updateSetting(fallback.id, v);
-                            else toast.info("Setting not initialized in DB yet.");
-                          }}
-                        >
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="true">Yes</SelectItem>
-                            <SelectItem value="false">No</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  );
-                })()}
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                <VoiceUploadCard 
+                  title="Employee Greeting" 
+                  description="Plays when an employee is found via the dial pad (e.g. 'Hello, Juan!')" 
+                  filename="greeting.mp3" 
+                />
+                <VoiceUploadCard 
+                  title="Time In Success" 
+                  description="Plays after a successful Time In is recorded" 
+                  filename="timein_success.mp3" 
+                />
+                <VoiceUploadCard 
+                  title="Time Out Success" 
+                  description="Plays after a successful Time Out is recorded" 
+                  filename="timeout_success.mp3" 
+                />
               </div>
-              <div className="border-t border-border pt-6">
-                <h4 className="font-medium mb-4">MP3 URLs / File Paths</h4>
-                <div className="grid grid-cols-1 gap-4 max-w-2xl">
-                  {['voice_time_in_success', 'voice_time_out_success', 'voice_employee_not_found', 'voice_invalid_employee_id'].map(key => {
-                    const row = settings.find(s => s.key === key);
-                    const label = key.replace("voice_", "").replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-                    return (
-                      <div key={key} className="space-y-1">
-                        <Label>{label} MP3 URL</Label>
-                        <div className="flex gap-2">
-                          <Input 
-                            value={row?.value || ""} 
-                            placeholder="e.g. /uploads/voice/prompt.mp3 or https://..."
-                            onChange={e => setSettings(prev => prev.map(p => p.id === row?.id ? { ...p, value: e.target.value } : p))}
-                          />
-                          {row && (
-                            <Button size="sm" variant="outline" onClick={() => updateSetting(row.id, row.value)}>
-                              <Save className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+
+              <div className="mt-8 bg-blue-50 dark:bg-blue-950/20 text-blue-800 dark:text-blue-300 p-4 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-900/50">
+                <Info className="w-5 h-5 shrink-0 mt-0.5" />
+                <div className="text-sm leading-relaxed">
+                  <strong>ℹ️ Voice Tips:</strong> Record your MP3 at a natural speaking pace. For the greeting, say the phrase without the employee name — the system will append it automatically using text-to-speech if needed. Recommended duration: 1–3 seconds per clip. Supported format: MP3 only.
                 </div>
               </div>
             </div>

@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle } from "lucide-react";
+import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle, MapPin, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
   formatCurrency, computeSSS, computePhilHealth, computePagIBIG,
@@ -76,8 +76,11 @@ export default function Payroll() {
   const [cutoffSettings, setCutoffSettings] = useState({ daysBefore: 3, skipWeekends: false });
   const [processing, setProcessing] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number; selfie_image_url?: string }>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, any>>({});
   const [savingOverrides, setSavingOverrides] = useState(false);
+  
+  // Breakdown Modal
+  const [breakdownEmployee, setBreakdownEmployee] = useState<any>(null);
 
   const fetchRuns = async () => {
     const { data, error } = await supabase.from("payroll_runs").select("*").order("created_at", { ascending: false });
@@ -215,7 +218,7 @@ export default function Payroll() {
           .lte("date", run.period_end);
 
         const totalLateMinutes = (attendance || []).reduce((sum, a) => sum + (a.late_minutes || 0), 0);
-        const daysPresent = (attendance || []).filter(a => a.status === "present" || a.status === "late").length;
+        const daysPresent = (attendance || []).filter(a => a.status === "present" || a.status === "late" || a.status === "On Time").length;
         const absences = Math.max(0, workingDaysInPeriod - daysPresent);
 
         const { data: leaveData } = await supabase.from("leaves")
@@ -229,8 +232,6 @@ export default function Payroll() {
         const dailyRate = getEffectiveDailyRate(emp.basic_salary, emp.payroll_type);
         const hourlyRate = dailyRate / 8;
 
-        // FIXED: Attendance-based computation for ALL payroll types
-        // gross_pay = daily_rate × (days_present + approved_leave_days)
         const effectiveDays = daysPresent + leaveDays;
         const basicPay = +(dailyRate * effectiveDays).toFixed(2);
         const grossPay = basicPay;
@@ -252,7 +253,6 @@ export default function Payroll() {
         const ph = computePhilHealth(monthlySalary);
         const pi = computePagIBIG(monthlySalary, pagibigOverrides);
 
-        // Per-employee manual contribution overrides (>0 means use that fixed monthly amount)
         const sssMonthly = (emp as any).sss_contribution > 0 ? (emp as any).sss_contribution : sss.employee;
         const phMonthly = (emp as any).phic_contribution > 0 ? (emp as any).phic_contribution : ph.employee;
         const piMonthly = (emp as any).hdmf_contribution > 0 ? (emp as any).hdmf_contribution : pi.employee;
@@ -326,21 +326,43 @@ export default function Payroll() {
     const empIds = items.map((d: any) => d.employee_id);
     if (empIds.length) {
       const { data: att } = await supabase.from("attendance")
-        .select("employee_id, time_in, time_out, status, latitude, longitude, selfie_image_url")
+        .select("employee_id, date, time_in, time_out, status, location_label_in, location_label_out, total_hours, photo_in_url")
         .in("employee_id", empIds)
         .gte("date", run.period_start)
         .lte("date", run.period_end)
         .order("date", { ascending: true });
-      const map: Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number; selfie_image_url?: string }> = {};
+        
+      const map: Record<string, any> = {};
       (att || []).forEach((a: any) => {
-        const cur = map[a.employee_id] || { days: 0 };
-        if (!cur.time_in && a.time_in) cur.time_in = a.time_in;
-        if (a.time_out) cur.time_out = a.time_out;
-        if (a.status === "present" || a.status === "late") cur.days += 1;
-        if (!cur.latitude && a.latitude) { cur.latitude = a.latitude; cur.longitude = a.longitude; }
-        if (!cur.selfie_image_url && a.selfie_image_url) cur.selfie_image_url = a.selfie_image_url;
+        const cur = map[a.employee_id] || { days: 0, records: [], locations: [] };
+        if (a.status === "present" || a.status === "late" || a.status === "On Time") cur.days += 1;
+        if (a.location_label_in) cur.locations.push(a.location_label_in);
+        if (!cur.selfie_image_url && a.photo_in_url) cur.selfie_image_url = a.photo_in_url;
+        cur.records.push(a);
         map[a.employee_id] = cur;
       });
+      
+      // Compute avg location and unique locations count
+      for (const key in map) {
+        const locs = map[key].locations as string[];
+        const unique = new Set(locs);
+        map[key].unique_locations_count = unique.size;
+        
+        if (locs.length > 0) {
+          const counts: Record<string, number> = {};
+          let maxCount = 0;
+          let maxLoc = locs[0];
+          locs.forEach(l => {
+            counts[l] = (counts[l] || 0) + 1;
+            if (counts[l] > maxCount) {
+              maxCount = counts[l];
+              maxLoc = l;
+            }
+          });
+          map[key].avg_location = maxLoc;
+        }
+      }
+      
       setAttendanceMap(map);
     }
   };
@@ -387,8 +409,6 @@ export default function Payroll() {
       return {
         employee_id: e?.employee_code || "",
         employee_name: e ? `${e.last_name}, ${e.first_name}` : "",
-        time_in: fmtTime(att.time_in),
-        time_out: fmtTime(att.time_out),
         days_worked: att.days,
         leave_days: item.leave_days || 0,
         basic_monthly_rate: monthly,
@@ -401,6 +421,7 @@ export default function Payroll() {
         cash_advance: item.cash_advance || 0,
         other_deductions: (item.other_deductions || 0) + (item.late_deductions || 0) + (item.absence_deductions || 0),
         net_pay: item.net_pay,
+        location: att.avg_location || "",
       };
     });
     exportPayrollExcel(rows, `payroll_${viewingRun.period_start}_to_${viewingRun.period_end}.xlsx`);
@@ -569,24 +590,12 @@ export default function Payroll() {
             </div>
           </div>
 
-          {/* Manual Deductions Notice */}
-          <div className="px-4 py-3 bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              You can manually enter <strong>Cash Advance</strong> and <strong>Other Deductions</strong> below.
-              Click <strong>Save Deductions</strong> to recalculate Net Pay. Net Pay will never go below ₱0.
-            </p>
-          </div>
-
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Employee</TableHead>
-                <TableHead>ID</TableHead>
-                <TableHead>Time In</TableHead>
-                <TableHead>Time Out</TableHead>
+                <TableHead>Location Details</TableHead>
                 <TableHead className="text-right">Days</TableHead>
-                <TableHead>Exact Location</TableHead>
                 <TableHead className="text-right">Monthly Rate</TableHead>
                 <TableHead className="text-right">Daily Rate</TableHead>
                 <TableHead className="text-right">Gross</TableHead>
@@ -601,7 +610,7 @@ export default function Payroll() {
               <TableBody>
                 {viewItems.map(item => {
                   const e = item.employees;
-                  const att = attendanceMap[item.employee_id] || { days: 0 };
+                  const att = attendanceMap[item.employee_id] || { days: 0, records: [] };
                   const monthly = e?.payroll_type === "daily_rate"
                     ? (e.basic_salary * WORKING_DAYS_PER_MONTH)
                     : e?.payroll_type === "hourly_rate"
@@ -609,29 +618,42 @@ export default function Payroll() {
                     : (e?.basic_salary || 0);
                   const daily = +(monthly / WORKING_DAYS_PER_MONTH).toFixed(2);
                   const ov = overrides[item.employee_id] || { cash_advance: 0, other_deductions: 0 };
+                  
                   return (
                     <TableRow key={item.id}>
                       <TableCell className="font-medium whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          {att.selfie_image_url ? (
-                            <img src={att.selfie_image_url} alt="Selfie" className="w-8 h-8 rounded-full object-cover border border-border" />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs text-muted-foreground border border-border">?</div>
-                          )}
-                          <span>{e ? `${e.last_name}, ${e.first_name}` : "—"}</span>
+                        <div className="flex flex-col gap-1">
+                          <span 
+                            className="font-medium hover:underline cursor-pointer text-primary" 
+                            onClick={() => setBreakdownEmployee({ emp: e, att })}
+                          >
+                            {e ? `${e.last_name}, ${e.first_name}` : "—"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">{e?.employee_code}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-xs">{e?.employee_code}</TableCell>
-                      <TableCell className="text-xs">{fmtTime(att.time_in)}</TableCell>
-                      <TableCell className="text-xs">{fmtTime(att.time_out)}</TableCell>
-                      <TableCell className="text-right">{att.days}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {att.latitude && att.longitude ? (
-                          <a href={`https://maps.google.com/?q=${att.latitude},${att.longitude}`} target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                            {att.latitude.toFixed(4)}, {att.longitude.toFixed(4)}
-                          </a>
-                        ) : "—"}
+                      
+                      <TableCell>
+                        <div className="flex flex-col gap-1 items-start">
+                          {att.avg_location ? (
+                            <Badge variant="secondary" className="font-normal text-xs flex items-center gap-1 max-w-[200px] truncate">
+                              <MapPin className="w-3 h-3" />
+                              <span className="truncate">{att.avg_location}</span>
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                          
+                          {att.unique_locations_count >= 3 && (
+                            <div className="flex items-center gap-1 text-amber-600 dark:text-amber-500 text-xs mt-1" title="Multiple work locations detected this period">
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Multiple locations</span>
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
+
+                      <TableCell className="text-right">{att.days}</TableCell>
                       <TableCell className="text-right">{formatCurrency(monthly)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(daily)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.gross_pay)}</TableCell>
@@ -671,7 +693,7 @@ export default function Payroll() {
                 })}
                 {/* Totals Row */}
                 <TableRow className="bg-muted/30 font-semibold">
-                  <TableCell colSpan={8} className="text-right text-sm text-muted-foreground">TOTALS</TableCell>
+                  <TableCell colSpan={5} className="text-right text-sm text-muted-foreground">TOTALS</TableCell>
                   <TableCell className="text-right">{formatCurrency(totals.gross)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totals.sss)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totals.ph)}</TableCell>
@@ -692,6 +714,64 @@ export default function Payroll() {
           </div>
         </div>
       )}
+      
+      {/* Attendance Location Summary Modal */}
+      <Dialog open={!!breakdownEmployee} onOpenChange={open => !open && setBreakdownEmployee(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Attendance Location Summary</DialogTitle>
+          </DialogHeader>
+          <div className="mt-4">
+            {breakdownEmployee && (
+              <>
+                <div className="mb-4">
+                  <h4 className="font-semibold">{breakdownEmployee.emp.first_name} {breakdownEmployee.emp.last_name}</h4>
+                  <p className="text-sm text-muted-foreground">{breakdownEmployee.emp.employee_code}</p>
+                </div>
+                
+                <div className="max-h-[60vh] overflow-y-auto border rounded-xl">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Time In</TableHead>
+                        <TableHead>Location (In)</TableHead>
+                        <TableHead>Time Out</TableHead>
+                        <TableHead>Location (Out)</TableHead>
+                        <TableHead>Hours</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {breakdownEmployee.att.records.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No attendance records found for this period.</TableCell>
+                        </TableRow>
+                      ) : (
+                        breakdownEmployee.att.records.map((r: any) => (
+                          <TableRow key={r.id}>
+                            <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
+                            <TableCell>{fmtTime(r.time_in)}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate" title={r.location_label_in || ""}>{r.location_label_in || "—"}</TableCell>
+                            <TableCell>{fmtTime(r.time_out)}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate" title={r.location_label_out || ""}>{r.location_label_out || "—"}</TableCell>
+                            <TableCell>{r.total_hours ? parseFloat(r.total_hours.toString()).toFixed(2) : "—"}</TableCell>
+                            <TableCell>
+                              <Badge variant={r.status === 'On Time' || r.status === 'present' ? "default" : r.status === 'Late' || r.status === 'late' ? "secondary" : "destructive"}>
+                                {r.status || "—"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
