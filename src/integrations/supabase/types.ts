@@ -558,6 +558,25 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_hr: { Args: never; Returns: boolean }
       is_payroll_officer: { Args: never; Returns: boolean }
+      kiosk_lookup_employee: {
+        Args: { _code: string }
+        Returns: {
+          employee_code: string
+          first_name: string
+          last_name: string
+        }[]
+      }
+      kiosk_punch: {
+        Args: {
+          _address: string
+          _code: string
+          _latitude: number
+          _longitude: number
+          _mode: string
+          _selfie: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin" | "hr" | "payroll_officer" | "employee"
