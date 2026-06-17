@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
-// Hardcoded admin shortcut — maps "Admin" / "1111" to the real Lovable Cloud admin account.
+// Hardcoded admin shortcut — maps "Admin" / "1111" to the ABL Payroll System admin account.
 const ADMIN_USERNAME = "Admin";
 const ADMIN_PASSWORD = "1111";
 const ADMIN_EMAIL = "adrian.llano79@gmail.com";
