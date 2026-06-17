@@ -319,7 +319,8 @@ export default function Payroll() {
       const map: Record<string, any> = {};
       (att || []).forEach((a: any) => {
         const cur = map[a.employee_id] || { days: 0, records: [], locations: [] };
-        if (a.status === "present" || a.status === "late" || a.status === "On Time") cur.days += 1;
+        // Count as 1 day only if both time_in AND time_out are present
+        if (a.time_in && a.time_out) cur.days += 1;
         if (a.location_label_in) cur.locations.push(a.location_label_in);
         if (!cur.selfie_image_url && a.photo_in_url) cur.selfie_image_url = a.photo_in_url;
         cur.records.push(a);
