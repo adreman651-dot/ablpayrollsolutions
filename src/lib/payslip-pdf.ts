@@ -42,7 +42,7 @@ export interface PayslipData {
 // Use "PHP " prefix so amounts always render in the exported PDF.
 function peso(n: number): string {
   const v = Number(n) || 0;
-  return "PHP " + new Intl.NumberFormat("en-PH", {
+  return "₱" + new Intl.NumberFormat("en-PH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(v);

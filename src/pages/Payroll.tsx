@@ -76,7 +76,7 @@ export default function Payroll() {
   const [cutoffSettings, setCutoffSettings] = useState({ daysBefore: 3, skipWeekends: false });
   const [processing, setProcessing] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number }>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number }>>({});
   const [savingOverrides, setSavingOverrides] = useState(false);
 
   const fetchRuns = async () => {
@@ -142,10 +142,30 @@ export default function Payroll() {
     });
   }, [autoGen.month, autoGen.cycle, cutoffSettings]);
 
-  const createRun = async () => {
-    if (!form.period_start || !form.period_end || !form.run_date) { toast.error("Select period dates"); return; }
-    const dup = runs.find(r => r.period_start === form.period_start && r.period_end === form.period_end);
-    if (dup) { toast.error("A payroll run for this exact period already exists"); return; }
+  const handleCreateRun = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.period_start || !form.period_end || !form.run_date) {
+      toast.error("Please fill all fields");
+      return;
+    }
+
+    // Prevent duplicate processing: check if run for this period already exists
+    const { data: existingRuns, error: checkError } = await supabase.from("payroll_runs")
+      .select("id")
+      .eq("period_start", form.period_start)
+      .eq("period_end", form.period_end)
+      .limit(1);
+
+    if (checkError) {
+      toast.error("Error checking existing runs");
+      return;
+    }
+
+    if (existingRuns && existingRuns.length > 0) {
+      toast.error("A payroll run for this exact period already exists.");
+      return;
+    }
+
     const { error } = await supabase.from("payroll_runs").insert({
       period_start: form.period_start, period_end: form.period_end, run_date: form.run_date,
       created_by: user?.id, cutoff_type: form.cutoff_type
@@ -209,26 +229,13 @@ export default function Payroll() {
         const dailyRate = getEffectiveDailyRate(emp.basic_salary, emp.payroll_type);
         const hourlyRate = dailyRate / 8;
 
+        // FIXED: Attendance-based computation for ALL payroll types
+        // gross_pay = daily_rate × (days_present + approved_leave_days)
         const effectiveDays = daysPresent + leaveDays;
-        
-        let basicPay = dailyRate * effectiveDays;
-        let absenceDeductions = 0;
-        let lateDeductions = 0;
-
-        if (emp.payroll_type === "daily_rate" || emp.payroll_type === "hourly_rate") {
-            // No time in means basic pay naturally 0
-            if (daysPresent === 0 && leaveDays === 0) {
-                basicPay = 0;
-            }
-        } else {
-            // Monthly rate logic
-            const unpaidAbsences = Math.max(0, absences - leaveDays);
-            absenceDeductions = unpaidAbsences * dailyRate;
-            lateDeductions = (totalLateMinutes / 60) * hourlyRate;
-            basicPay = (emp.basic_salary * cycleFactor);
-        }
-
-        const grossPay = +basicPay.toFixed(2);
+        const basicPay = +(dailyRate * effectiveDays).toFixed(2);
+        const grossPay = basicPay;
+        const absenceDeductions = 0;  // accounted for by only paying worked days
+        const lateDeductions = 0;
 
         const monthlySalary = emp.payroll_type === "daily_rate"
           ? emp.basic_salary * WORKING_DAYS_PER_MONTH
@@ -261,7 +268,7 @@ export default function Payroll() {
           .select("per_cutoff_amortization").eq("employee_id", emp.id).eq("status", "approved");
         const loanDeductions = +((loans || []).reduce((sum, l) => sum + (l.per_cutoff_amortization || 0), 0)).toFixed(2);
 
-        const totalDeductions = +(lateDeductions + absenceDeductions + sssEE + phEE + piEE + tax + loanDeductions).toFixed(2);
+        const totalDeductions = +(sssEE + phEE + piEE + tax + loanDeductions).toFixed(2);
         const netPay = Math.max(0, grossPay - totalDeductions);
 
         items.push({
@@ -319,17 +326,18 @@ export default function Payroll() {
     const empIds = items.map((d: any) => d.employee_id);
     if (empIds.length) {
       const { data: att } = await supabase.from("attendance")
-        .select("employee_id, time_in, time_out, status")
+        .select("employee_id, time_in, time_out, status, latitude, longitude")
         .in("employee_id", empIds)
         .gte("date", run.period_start)
         .lte("date", run.period_end)
         .order("date", { ascending: true });
-      const map: Record<string, { time_in?: string; time_out?: string; days: number }> = {};
-      (att || []).forEach(a => {
+      const map: Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number }> = {};
+      (att || []).forEach((a: any) => {
         const cur = map[a.employee_id] || { days: 0 };
         if (!cur.time_in && a.time_in) cur.time_in = a.time_in;
         if (a.time_out) cur.time_out = a.time_out;
         if (a.status === "present" || a.status === "late") cur.days += 1;
+        if (!cur.latitude && a.latitude) { cur.latitude = a.latitude; cur.longitude = a.longitude; }
         map[a.employee_id] = cur;
       });
       setAttendanceMap(map);
@@ -577,6 +585,7 @@ export default function Payroll() {
                 <TableHead>Time In</TableHead>
                 <TableHead>Time Out</TableHead>
                 <TableHead className="text-right">Days</TableHead>
+                <TableHead>Exact Location</TableHead>
                 <TableHead className="text-right">Monthly Rate</TableHead>
                 <TableHead className="text-right">Daily Rate</TableHead>
                 <TableHead className="text-right">Gross</TableHead>
@@ -606,6 +615,13 @@ export default function Payroll() {
                       <TableCell className="text-xs">{fmtTime(att.time_in)}</TableCell>
                       <TableCell className="text-xs">{fmtTime(att.time_out)}</TableCell>
                       <TableCell className="text-right">{att.days}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {att.latitude && att.longitude ? (
+                          <a href={`https://maps.google.com/?q=${att.latitude},${att.longitude}`} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                            {att.latitude.toFixed(4)}, {att.longitude.toFixed(4)}
+                          </a>
+                        ) : "—"}
+                      </TableCell>
                       <TableCell className="text-right">{formatCurrency(monthly)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(daily)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(item.gross_pay)}</TableCell>
@@ -645,7 +661,7 @@ export default function Payroll() {
                 })}
                 {/* Totals Row */}
                 <TableRow className="bg-muted/30 font-semibold">
-                  <TableCell colSpan={7} className="text-right text-sm text-muted-foreground">TOTALS</TableCell>
+                  <TableCell colSpan={8} className="text-right text-sm text-muted-foreground">TOTALS</TableCell>
                   <TableCell className="text-right">{formatCurrency(totals.gross)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totals.sss)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(totals.ph)}</TableCell>
