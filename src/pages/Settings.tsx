@@ -136,7 +136,7 @@ export default function Settings() {
       const backupData = JSON.parse(text);
       
       // 3. Clear existing transactional data first to avoid FK constraints
-      const clearTables = ["loan_payments", "loans", "payroll_items", "payroll_runs", "leaves", "attendance"];
+      const clearTables = ["loan_payments", "loans", "payroll_items", "payroll_runs", "leaves", "attendance", "employees"];
       for (const table of clearTables) {
          await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000"); // Hack to delete all
       }
@@ -171,12 +171,12 @@ export default function Settings() {
     
     setIsDeleting(true);
     try {
-      const tables = ["loan_payments", "loans", "payroll_items", "payroll_runs", "leaves", "attendance"];
+      const tables = ["loan_payments", "loans", "payroll_items", "payroll_runs", "leaves", "attendance", "employees"];
       for (const table of tables) {
          const { error } = await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
          if (error) throw error;
       }
-      toast.success("All transactional records have been deleted.");
+      toast.success("All transactional records and employees have been deleted.");
       setDeleteConfirmText("");
     } catch (err: any) {
       toast.error("Delete failed: " + err.message);
@@ -464,7 +464,7 @@ export default function Settings() {
                 <div>
                   <h4 className="font-medium text-sm flex items-center gap-2 text-destructive"><Trash2 className="w-4 h-4" /> Delete All Transactional Records</h4>
                   <p className="text-xs text-muted-foreground mt-1">
-                    This will permanently delete all Attendance, Payroll Runs, Payslips, Leaves, and Loans.
+                    This will permanently delete all Employees, Attendance, Payroll Runs, Payslips, Leaves, and Loans.
                     System Users and Application Settings will NOT be affected.
                   </p>
                 </div>

@@ -76,7 +76,7 @@ export default function Payroll() {
   const [cutoffSettings, setCutoffSettings] = useState({ daysBefore: 3, skipWeekends: false });
   const [processing, setProcessing] = useState(false);
   const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number }>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number; selfie_image_url?: string }>>({});
   const [savingOverrides, setSavingOverrides] = useState(false);
 
   const fetchRuns = async () => {
@@ -326,18 +326,19 @@ export default function Payroll() {
     const empIds = items.map((d: any) => d.employee_id);
     if (empIds.length) {
       const { data: att } = await supabase.from("attendance")
-        .select("employee_id, time_in, time_out, status, latitude, longitude")
+        .select("employee_id, time_in, time_out, status, latitude, longitude, selfie_image_url")
         .in("employee_id", empIds)
         .gte("date", run.period_start)
         .lte("date", run.period_end)
         .order("date", { ascending: true });
-      const map: Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number }> = {};
+      const map: Record<string, { time_in?: string; time_out?: string; days: number; latitude?: number; longitude?: number; selfie_image_url?: string }> = {};
       (att || []).forEach((a: any) => {
         const cur = map[a.employee_id] || { days: 0 };
         if (!cur.time_in && a.time_in) cur.time_in = a.time_in;
         if (a.time_out) cur.time_out = a.time_out;
         if (a.status === "present" || a.status === "late") cur.days += 1;
         if (!cur.latitude && a.latitude) { cur.latitude = a.latitude; cur.longitude = a.longitude; }
+        if (!cur.selfie_image_url && a.selfie_image_url) cur.selfie_image_url = a.selfie_image_url;
         map[a.employee_id] = cur;
       });
       setAttendanceMap(map);
@@ -610,7 +611,16 @@ export default function Payroll() {
                   const ov = overrides[item.employee_id] || { cash_advance: 0, other_deductions: 0 };
                   return (
                     <TableRow key={item.id}>
-                      <TableCell className="font-medium whitespace-nowrap">{e ? `${e.last_name}, ${e.first_name}` : "—"}</TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          {att.selfie_image_url ? (
+                            <img src={att.selfie_image_url} alt="Selfie" className="w-8 h-8 rounded-full object-cover border border-border" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs text-muted-foreground border border-border">?</div>
+                          )}
+                          <span>{e ? `${e.last_name}, ${e.first_name}` : "—"}</span>
+                        </div>
+                      </TableCell>
                       <TableCell className="font-mono text-xs">{e?.employee_code}</TableCell>
                       <TableCell className="text-xs">{fmtTime(att.time_in)}</TableCell>
                       <TableCell className="text-xs">{fmtTime(att.time_out)}</TableCell>

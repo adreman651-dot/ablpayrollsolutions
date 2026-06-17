@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Check, X, FileSpreadsheet, FileText } from "lucide-react";
+import { Plus, Check, X, FileSpreadsheet, FileText, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/payroll-utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,7 +39,13 @@ export default function Loans() {
   const [employees, setEmployees] = useState<{ id: string; first_name: string; last_name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editLoanId, setEditLoanId] = useState<string | null>(null);
   const [form, setForm] = useState({ employee_id: "", loan_type: "", principal_amount: 0, monthly_amortization: 0, per_cutoff_amortization: 0 });
+
+  const resetForm = () => {
+    setEditLoanId(null);
+    setForm({ employee_id: "", loan_type: "", principal_amount: 0, monthly_amortization: 0, per_cutoff_amortization: 0 });
+  };
 
   const fetchData = async () => {
     const [loansRes, empRes] = await Promise.all([
@@ -58,15 +64,48 @@ export default function Loans() {
     if (!empId || !form.loan_type || !form.principal_amount) {
       toast.error("Please fill all required fields"); return;
     }
-    const { error } = await supabase.from("loans").insert({
-      employee_id: empId, loan_type: form.loan_type,
-      principal_amount: form.principal_amount,
-      monthly_amortization: form.monthly_amortization,
-      per_cutoff_amortization: form.per_cutoff_amortization,
-      remaining_balance: form.principal_amount,
+    
+    if (editLoanId) {
+      const { error } = await supabase.from("loans").update({
+        employee_id: empId, loan_type: form.loan_type,
+        principal_amount: form.principal_amount,
+        monthly_amortization: form.monthly_amortization,
+        per_cutoff_amortization: form.per_cutoff_amortization,
+        // Optional: you might not want to reset remaining_balance if they already paid some, but for simplicity we allow full edit
+        remaining_balance: form.principal_amount,
+      }).eq("id", editLoanId);
+      if (error) toast.error(error.message);
+      else { toast.success("Loan updated"); setDialogOpen(false); resetForm(); fetchData(); }
+    } else {
+      const { error } = await supabase.from("loans").insert({
+        employee_id: empId, loan_type: form.loan_type,
+        principal_amount: form.principal_amount,
+        monthly_amortization: form.monthly_amortization,
+        per_cutoff_amortization: form.per_cutoff_amortization,
+        remaining_balance: form.principal_amount,
+      });
+      if (error) toast.error(error.message);
+      else { toast.success("Loan application submitted"); setDialogOpen(false); resetForm(); fetchData(); }
+    }
+  };
+
+  const handleEdit = (loan: Loan) => {
+    setEditLoanId(loan.id);
+    setForm({
+      employee_id: loan.employee_id,
+      loan_type: loan.loan_type,
+      principal_amount: loan.principal_amount,
+      monthly_amortization: loan.monthly_amortization,
+      per_cutoff_amortization: loan.per_cutoff_amortization,
     });
+    setDialogOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this loan record?")) return;
+    const { error } = await supabase.from("loans").delete().eq("id", id);
     if (error) toast.error(error.message);
-    else { toast.success("Loan application submitted"); setDialogOpen(false); setForm({ employee_id: "", loan_type: "", principal_amount: 0, monthly_amortization: 0, per_cutoff_amortization: 0 }); fetchData(); }
+    else { toast.success("Loan deleted"); fetchData(); }
   };
 
   const updateStatus = async (id: string, status: string) => {
@@ -130,12 +169,15 @@ export default function Loans() {
               <Button variant="outline" size="sm" onClick={exportPDF}><FileText className="w-4 h-4 mr-2" />PDF</Button>
             </>
           )}
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button><Plus className="w-4 h-4 mr-2" />Apply Loan</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Loan Application</DialogTitle></DialogHeader>
+            <Dialog open={dialogOpen} onOpenChange={(open) => {
+              setDialogOpen(open);
+              if (!open) resetForm();
+            }}>
+              <DialogTrigger asChild>
+                <Button><Plus className="w-4 h-4 mr-2" />Apply Loan</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>{editLoanId ? "Edit Loan" : "Loan Application"}</DialogTitle></DialogHeader>
               <div className="space-y-4 mt-4">
                 {canApprove && (
                   <div className="space-y-2">
@@ -176,7 +218,7 @@ export default function Loans() {
                     <Input type="number" value={form.per_cutoff_amortization} onChange={e => setForm({ ...form, per_cutoff_amortization: parseFloat(e.target.value) || 0 })} />
                   </div>
                 </div>
-                <Button onClick={handleApply} className="w-full">Submit Application</Button>
+                <Button onClick={handleApply} className="w-full">{editLoanId ? "Save Changes" : "Submit Application"}</Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -221,16 +263,24 @@ export default function Loans() {
                 </TableCell>
                 {canApprove && (
                   <TableCell>
-                    {l.status === "pending" && (
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="outline" onClick={() => updateStatus(l.id, "approved")}>
-                          <Check className="w-3 h-3 mr-1" />Approve
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => updateStatus(l.id, "rejected")}>
-                          <X className="w-3 h-3 mr-1" />Reject
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex gap-1 flex-wrap">
+                      {l.status === "pending" && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => updateStatus(l.id, "approved")}>
+                            <Check className="w-3 h-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => updateStatus(l.id, "rejected")}>
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => handleEdit(l)}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(l.id)}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </TableCell>
                 )}
               </TableRow>

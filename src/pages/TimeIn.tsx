@@ -174,26 +174,52 @@ export default function TimeIn() {
 
   const submit = async () => {
     if (!code.trim()) { toast.error("Enter your Employee ID"); return; }
-    if (!location) {
-      toast.error("Location access is required for attendance recording.");
-      return;
+    setSubmitting(true);
+    
+    let finalLocation = location;
+    let finalAddress = address;
+
+    if (!finalLocation) {
+      try {
+        toast.info("Acquiring GPS location...");
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+        });
+        finalLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLocation(finalLocation);
+        // Optional quick reverse geocoding
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${finalLocation.lat}&lon=${finalLocation.lng}&zoom=16`);
+          const d = await r.json();
+          if (d.display_name) {
+            finalAddress = d.display_name;
+            setAddress(d.display_name);
+          }
+        } catch {}
+      } catch {
+        toast.error("Location access is required. Please check your device GPS settings.");
+        setSubmitting(false);
+        return;
+      }
     }
+
     const selfie = captureSelfie();
     if (!selfie) {
       toast.error("Selfie verification is required.");
+      setSubmitting(false);
       return;
     }
-    setSubmitting(true);
+
     try {
       const lookup = "ABL-" + code.padStart(5, "0");
       
       const { data, error } = await supabase.rpc("kiosk_punch", {
         _code: lookup,
         _mode: mode,
-        _latitude: location.lat,
-        _longitude: location.lng,
+        _latitude: finalLocation.lat,
+        _longitude: finalLocation.lng,
         _selfie: selfie,
-        _address: address || null,
+        _address: finalAddress || null,
       });
       if (error) { toast.error(error.message); return; }
       const res = data as { ok?: boolean; error?: string; first_name?: string; last_name?: string; late_minutes?: number } | null;

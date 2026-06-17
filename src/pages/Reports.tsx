@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileText, Download, BarChart3 } from "lucide-react";
+import { FileText, Download, BarChart3, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency, WORKING_DAYS_PER_MONTH } from "@/lib/payroll-utils";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const reportTypes = [
   { value: "payroll_detail", label: "Payroll Detailed Report" },
@@ -275,6 +277,26 @@ export default function Reports() {
     toast.success("Excel report exported");
   };
 
+  const exportPDFReport = () => {
+    if (!data.length) return;
+    const doc = new jsPDF("landscape");
+    doc.text(`${reportType.replace(/_/g, " ").toUpperCase()} REPORT`, 14, 15);
+    
+    const head = [columns];
+    const body = data.map(row => columns.map(c => row[c] ?? ""));
+    
+    autoTable(doc, {
+      startY: 20,
+      head: head,
+      body: body,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [41, 128, 185] },
+    });
+    
+    doc.save(`${reportType}_report.pdf`);
+    toast.success("PDF report exported");
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -310,7 +332,10 @@ export default function Reports() {
                 <Download className="w-4 h-4 mr-2" />CSV
               </Button>
               <Button variant="outline" onClick={exportExcelReport}>
-                <FileText className="w-4 h-4 mr-2" />Excel
+                <FileSpreadsheet className="w-4 h-4 mr-2" />Excel
+              </Button>
+              <Button variant="outline" onClick={exportPDFReport}>
+                <FileText className="w-4 h-4 mr-2" />PDF
               </Button>
             </>
           )}
