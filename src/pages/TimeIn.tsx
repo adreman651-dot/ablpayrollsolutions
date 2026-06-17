@@ -168,6 +168,7 @@ export default function TimeIn() {
         });
         if (error) { toast.error(error.message); return; }
         toast.success(`${emp.first_name} Successfully timed in!${lateMinutes ? ` (${lateMinutes}m late)` : ""}`);
+        speak(`Welcome ${emp.first_name} ${emp.last_name}. Your Time In has been recorded.`);
       } else {
         if (!existing) { toast.error("No time-in record for today"); return; }
         if (existing.time_out) { toast.error("Already timed out today"); return; }
@@ -193,6 +194,7 @@ export default function TimeIn() {
           
         if (error) { toast.error(error.message); return; }
         toast.success(`${emp.first_name} Successfully timed out!`);
+        speak(`Thank you ${emp.first_name} ${emp.last_name}. Your Time Out has been recorded.`);
       }
       setCode("");
     } finally {
