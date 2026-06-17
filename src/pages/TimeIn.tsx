@@ -140,14 +140,25 @@ export default function TimeIn() {
     if (enableFaceGate) return;
 
     const lookupEmployee = async () => {
+      const paddedCode = "ABL-" + code.padStart(5, "0");
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('id, first_name, last_name, employee_code')
-        .ilike('employee_code', `${code}%`);
+        .or(`employee_code.ilike.%${code}%,employee_code.eq.${paddedCode}`);
         
-      if (!error && data && data.length === 1) {
-        setEmployeeName(`${data[0].first_name} ${data[0].last_name}`.toUpperCase());
-        setEmployeeId(data[0].id);
+      if (!error && data) {
+        const exact = data.find(d => d.employee_code === paddedCode);
+        if (exact) {
+          setEmployeeName(`${exact.first_name} ${exact.last_name}`.toUpperCase());
+          setEmployeeId(exact.id);
+        } else if (data.length === 1) {
+          setEmployeeName(`${data[0].first_name} ${data[0].last_name}`.toUpperCase());
+          setEmployeeId(data[0].id);
+        } else {
+          setEmployeeName("");
+          setEmployeeId("");
+        }
       } else {
         setEmployeeName("");
         setEmployeeId("");
@@ -267,11 +278,13 @@ export default function TimeIn() {
     if (!code || enableFaceGate) return;
     setSubmitting(true);
     
+    const paddedCode = "ABL-" + code.padStart(5, "0");
+    
     // Exact match lookup
     const { data, error } = await supabase
       .from('profiles')
       .select('id, first_name, last_name')
-      .eq('employee_code', code)
+      .eq('employee_code', paddedCode)
       .maybeSingle();
       
     if (error || !data) {
@@ -358,6 +371,7 @@ export default function TimeIn() {
     }
     
     try {
+      const lookup = "ABL-" + code.padStart(5, "0");
       const photoUrl = await uploadSelfie(selfieBase64, employeeId);
       
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
