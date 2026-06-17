@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, CheckCircle } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "in" | "out";
-type Phase = "dial" | "camera" | "success";
+type Phase = "active" | "success";
 
 // Helper to play an error beep
 const playErrorBeep = () => {
@@ -37,24 +36,69 @@ export default function TimeIn() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [phase, setPhase] = useState<Phase>("dial");
+  
+  const [phase, setPhase] = useState<Phase>("active");
   const [code, setCode] = useState("");
   const [employeeName, setEmployeeName] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [now, setNow] = useState(new Date());
   const [submitting, setSubmitting] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [address, setAddress] = useState<string>("");
-  const [mode, setMode] = useState<Mode>("in");
+  const [mode, setMode] = useState<Mode | null>(null); // "in" or "out" determined after DONE
   const [cameraReady, setCameraReady] = useState(false);
   const [shake, setShake] = useState(false);
+  
+  // Face detection
   const [faceDetected, setFaceDetected] = useState(false);
   const [faceApiLoaded, setFaceApiLoaded] = useState(false);
+  const [enableFaceGate, setEnableFaceGate] = useState(false); // only true after DONE
+  
   const [successInfo, setSuccessInfo] = useState<{name: string, time: string} | null>(null);
+  
   const detectionIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Load face-api.js
+  // Load face-api.js and Start Camera & GPS on load
   useEffect(() => {
+    // 1. Silent GPS
+    if (navigator.geolocation) {
+      const watch = navigator.geolocation.watchPosition(
+        pos => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setLocation({ lat, lng });
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`)
+            .then(r => r.json())
+            .then(d => setAddress(d.display_name || ""))
+            .catch(() => {});
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+      );
+      // cleanup handled at unmount
+    }
+
+    // 2. Camera
+    const initCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false,
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          setCameraReady(true);
+        }
+      } catch (e) {
+        toast.error("Camera access denied.");
+      }
+    };
+    initCamera();
+
+    // 3. Face API
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js";
     script.async = true;
@@ -78,97 +122,46 @@ export default function TimeIn() {
     };
   }, []);
 
-  // Voice Asset Logic helper
-  const playVoiceAsset = async (filename: string, fallbackText: string) => {
-    try {
-      const { data } = supabase.storage.from("voice-assets").getPublicUrl(filename);
-      // Try to fetch to see if it actually exists (Supabase public URLs always generate a URL, we need to check if 200)
-      const res = await fetch(data.publicUrl);
-      if (res.ok) {
-        const arrayBuffer = await res.arrayBuffer();
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = new AudioContext();
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        source.start(0);
-      } else {
-        throw new Error("File not found");
-      }
-    } catch (e) {
-      // Fallback to TTS
-      if ("speechSynthesis" in window) {
-        const u = new SpeechSynthesisUtterance(fallbackText);
-        u.lang = "en-US";
-        u.rate = 1.0;
-        u.pitch = 1.1;
-        u.volume = 1.0;
-        const voices = window.speechSynthesis.getVoices();
-        const female = voices.find(v => v.lang === "en-US" && v.name.toLowerCase().includes("female"));
-        if (female) u.voice = female;
-        window.speechSynthesis.speak(u);
-      }
-    }
-  };
-
   // Clock
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Silent GPS capture
+  // Real-time Employee Lookup
   useEffect(() => {
-    if (!navigator.geolocation) return;
-    const watch = navigator.geolocation.watchPosition(
-      pos => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setLocation({ lat, lng });
-        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`)
-          .then(r => r.json())
-          .then(d => setAddress(d.display_name || ""))
-          .catch(() => {});
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-    );
-    return () => navigator.geolocation.clearWatch(watch);
-  }, []);
+    if (!code) {
+      setEmployeeName("");
+      setEmployeeId("");
+      return;
+    }
+    
+    // Don't lookup if face gate is already enabled
+    if (enableFaceGate) return;
 
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCameraReady(true);
-        startFaceDetection();
+    const lookupEmployee = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, first_name, last_name, employee_code')
+        .ilike('employee_code', `${code}%`);
+        
+      if (!error && data && data.length === 1) {
+        setEmployeeName(`${data[0].first_name} ${data[0].last_name}`.toUpperCase());
+        setEmployeeId(data[0].id);
+      } else {
+        setEmployeeName("");
+        setEmployeeId("");
       }
-    } catch (e) {
-      toast.error("Camera access denied.");
-    }
-  };
+    };
+    
+    const timeout = setTimeout(lookupEmployee, 150);
+    return () => clearTimeout(timeout);
+  }, [code, enableFaceGate]);
 
-  const stopCamera = () => {
-    if (detectionIntervalRef.current) {
-      clearInterval(detectionIntervalRef.current);
-      detectionIntervalRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    setCameraReady(false);
-    setFaceDetected(false);
-  };
-
-  const startFaceDetection = () => {
+  // Face Detection Loop
+  useEffect(() => {
+    if (!enableFaceGate || !cameraReady || !faceApiLoaded || phase !== "active") return;
+    
     if (!(window as any).faceapi || !videoRef.current || !overlayCanvasRef.current) return;
     const faceapi = (window as any).faceapi;
     const video = videoRef.current;
@@ -188,25 +181,13 @@ export default function TimeIn() {
           const resizedDetections = faceapi.resizeResults(detections, displaySize);
           const box = resizedDetections.box;
           
-          // Draw face outline box (mirrored since video is mirrored)
           ctx.save();
-          ctx.translate(canvas.width, 0);
-          ctx.scale(-1, 1);
-          
+          // Draw thin green rectangle outline
           ctx.strokeStyle = '#00C853';
-          ctx.lineWidth = 3;
-          // Subtly rounded corners
+          ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.roundRect(box.x, box.y, box.width, box.height, 10);
+          ctx.rect(box.x, box.y, box.width, box.height);
           ctx.stroke();
-          
-          // Semi-transparent overlay with clear cutout for face
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-          ctx.beginPath();
-          ctx.rect(0, 0, canvas.width, canvas.height);
-          ctx.roundRect(box.x, box.y, box.width, box.height, 10);
-          ctx.fill('evenodd');
-          
           ctx.restore();
           
           setFaceDetected(true);
@@ -215,6 +196,49 @@ export default function TimeIn() {
         }
       }
     }, 500);
+
+    return () => {
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
+      }
+      const ctx = overlayCanvasRef.current?.getContext('2d');
+      if (ctx && overlayCanvasRef.current) {
+        ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+      }
+    };
+  }, [enableFaceGate, cameraReady, faceApiLoaded, phase]);
+
+
+  const playVoiceAsset = async (filename: string, fallbackText: string) => {
+    try {
+      const { data } = supabase.storage.from("voice-assets").getPublicUrl(filename);
+      const res = await fetch(data.publicUrl);
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer();
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioContext();
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        source.start(0);
+      } else {
+        throw new Error("File not found");
+      }
+    } catch (e) {
+      if ("speechSynthesis" in window) {
+        const u = new SpeechSynthesisUtterance(fallbackText);
+        u.lang = "en-US";
+        u.rate = 1.0;
+        u.pitch = 1.1;
+        u.volume = 1.0;
+        const voices = window.speechSynthesis.getVoices();
+        const female = voices.find(v => v.lang === "en-US" && v.name.toLowerCase().includes("female"));
+        if (female) u.voice = female;
+        window.speechSynthesis.speak(u);
+      }
+    }
   };
 
   const triggerShake = () => {
@@ -222,52 +246,72 @@ export default function TimeIn() {
     setTimeout(() => setShake(false), 500);
   };
 
-  const handleDoneDialing = async () => {
-    if (!code) return;
+  const resetKiosk = () => {
+    setCode("");
+    setEmployeeName("");
+    setEmployeeId("");
+    setEnableFaceGate(false);
+    setFaceDetected(false);
+    setMode(null);
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+      detectionIntervalRef.current = null;
+    }
+    const ctx = overlayCanvasRef.current?.getContext('2d');
+    if (ctx && overlayCanvasRef.current) {
+      ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+    }
+  };
+
+  const handleDone = async () => {
+    if (!code || enableFaceGate) return;
     setSubmitting(true);
     
-    const lookup = code.startsWith("ABL-") ? code : "ABL-" + code.padStart(5, "0");
-    const { data, error } = await supabase.rpc("kiosk_lookup_employee", { _code: lookup });
-    const row = Array.isArray(data) ? data[0] : null;
-    
-    if (error || !row) {
+    // Exact match lookup
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name')
+      .eq('employee_code', code)
+      .maybeSingle();
+      
+    if (error || !data) {
       playErrorBeep();
       triggerShake();
-      setCode("");
+      resetKiosk();
       setSubmitting(false);
       return;
     }
     
-    const fn = row.first_name || "";
-    setEmployeeName(`${fn} ${row.last_name || ""}`);
+    const fullName = `${data.first_name} ${data.last_name}`.toUpperCase();
+    setEmployeeName(fullName);
+    setEmployeeId(data.id);
     
-    // Auto detect mode
-    const today = new Date().toLocaleDateString('en-CA'); // Local YYYY-MM-DD
+    // Check today's attendance to determine IN or OUT
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }); 
     const { data: att } = await supabase.from('attendance')
        .select('time_in, time_out')
-       .eq('employee_id', row.id)
+       .eq('employee_id', data.id)
        .eq('date', today)
        .maybeSingle();
        
     if (!att) setMode("in");
     else if (att.time_in && !att.time_out) setMode("out");
-    else setMode("in"); // default back to in
+    else setMode("in"); 
     
-    // Play greeting
-    await playVoiceAsset("greeting.mp3", `Hello, ${fn}!`);
-    
-    setPhase("camera");
+    await playVoiceAsset("greeting.mp3", `Hello, ${data.first_name}!`);
+    setEnableFaceGate(true);
     setSubmitting(false);
-    
-    // Start camera after a tiny delay to let UI render
-    setTimeout(startCamera, 100);
   };
 
   const press = (k: string) => {
-    if (phase !== "dial") return;
-    if (k === "clear") setCode("");
-    else if (k === "done") handleDoneDialing();
-    else setCode(c => (c.length >= 8 ? c : c + k));
+    if (enableFaceGate || submitting || phase !== "active") return;
+    if (k === "Clear") {
+      resetKiosk();
+    }
+    else if (k === "Done") {
+      handleDone();
+    }
+    else setCode(c => c + k);
   };
 
   const captureSelfie = (): string | null => {
@@ -278,56 +322,112 @@ export default function TimeIn() {
     c.height = v.videoHeight || 640;
     const ctx = c.getContext("2d");
     if (!ctx) return null;
-    ctx.translate(c.width, 0); ctx.scale(-1, 1);
     ctx.drawImage(v, 0, 0, c.width, c.height);
     return c.toDataURL("image/jpeg", 0.6);
   };
 
+  const uploadSelfie = async (base64Image: string, empId: string): Promise<string | null> => {
+    try {
+      const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, 'base64');
+      const filename = `${empId}_${Date.now()}.jpg`;
+      
+      const { data, error } = await supabase.storage
+        .from('selfies')
+        .upload(filename, buffer, { contentType: 'image/jpeg' });
+        
+      if (error) throw error;
+      
+      const { data: publicData } = supabase.storage.from('selfies').getPublicUrl(filename);
+      return publicData.publicUrl;
+    } catch (e) {
+      console.error("Selfie upload failed", e);
+      return null;
+    }
+  };
+
   const submitPunch = async () => {
-    if (!faceDetected) return;
+    if (!faceDetected || !employeeId || !mode) return;
     setSubmitting(true);
     
-    const selfie = captureSelfie();
-    if (!selfie) {
+    const selfieBase64 = captureSelfie();
+    if (!selfieBase64) {
       toast.error("Could not capture selfie.");
       setSubmitting(false);
       return;
     }
-
+    
     try {
-      const lookup = "ABL-" + code.padStart(5, "0");
-      const { data, error } = await supabase.rpc("kiosk_punch", {
-        _code: lookup,
-        _mode: mode,
-        _latitude: location?.lat || null,
-        _longitude: location?.lng || null,
-        _selfie: selfie,
-        _address: address || null,
-      });
+      const photoUrl = await uploadSelfie(selfieBase64, employeeId);
       
-      if (error) throw error;
-      const res = data as any;
-      if (!res?.ok) {
-        throw new Error(res?.error || "Invalid punch");
-      }
-      
-      const timeStr = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+      const nowIso = new Date().toISOString();
+      const h = new Date().getHours();
+      // Simple status logic: Before 8 AM = On Time, else Late
+      const status = h < 8 ? "On Time" : "Late";
       
       if (mode === "in") {
+        const { error } = await supabase.from('attendance').insert({
+          employee_id: employeeId,
+          date: today,
+          time_in: nowIso,
+          photo_in_url: photoUrl,
+          latitude_in: location?.lat || null,
+          longitude_in: location?.lng || null,
+          location_label_in: address || null,
+          status: status
+        });
+        if (error) throw error;
         playVoiceAsset("timein_success.mp3", "Successfully timed in!");
       } else {
+        // Mode out: update existing record
+        const { data: existing } = await supabase.from('attendance')
+          .select('id, time_in')
+          .eq('employee_id', employeeId)
+          .eq('date', today)
+          .maybeSingle();
+          
+        if (existing) {
+          // Compute hours
+          let total_hours = 0;
+          if (existing.time_in) {
+            const ms = new Date(nowIso).getTime() - new Date(existing.time_in).getTime();
+            total_hours = parseFloat((ms / (1000 * 60 * 60)).toFixed(2));
+          }
+          const { error } = await supabase.from('attendance').update({
+            time_out: nowIso,
+            photo_out_url: photoUrl,
+            latitude_out: location?.lat || null,
+            longitude_out: location?.lng || null,
+            location_label_out: address || null,
+            total_hours: total_hours
+          }).eq('id', existing.id);
+          if (error) throw error;
+        } else {
+          // Edge case: Time out but no time in found today
+          const { error } = await supabase.from('attendance').insert({
+            employee_id: employeeId,
+            date: today,
+            time_out: nowIso,
+            photo_out_url: photoUrl,
+            latitude_out: location?.lat || null,
+            longitude_out: location?.lng || null,
+            location_label_out: address || null,
+          });
+          if (error) throw error;
+        }
         playVoiceAsset("timeout_success.mp3", "Successfully timed out!");
       }
       
-      stopCamera();
+      const timeStr = new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', hour12: true });
       setSuccessInfo({ name: employeeName, time: timeStr });
       setPhase("success");
       
       setTimeout(() => {
-        setPhase("dial");
-        setCode("");
-        setEmployeeName("");
+        setPhase("active");
+        resetKiosk();
         setSuccessInfo(null);
+        setSubmitting(false);
       }, 3000);
       
     } catch (e: any) {
@@ -335,169 +435,107 @@ export default function TimeIn() {
       setSubmitting(false);
     }
   };
-  
-  const cancelPunch = () => {
-    stopCamera();
-    setPhase("dial");
-    setCode("");
-    setEmployeeName("");
-  };
 
-  const keys = ["1","2","3","4","5","6","7","8","9","clear","0","done"];
+  const keys = ["1","2","3","4","5","6","7","8","9","Clear","0","Done"];
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-[#0F0F1A] text-white select-none">
-      
+    <div className="fixed inset-0 overflow-hidden bg-black text-white select-none">
+      {/* LAYER 1: Fullscreen Camera Video */}
+      <video
+        ref={videoRef}
+        playsInline muted autoPlay
+        className="fixed top-0 left-0 w-[100vw] h-[100vh] object-cover z-0"
+        onLoadedMetadata={() => {
+          if (overlayCanvasRef.current && videoRef.current) {
+            overlayCanvasRef.current.width = videoRef.current.videoWidth;
+            overlayCanvasRef.current.height = videoRef.current.videoHeight;
+          }
+        }}
+      />
+      <canvas ref={overlayCanvasRef} className="fixed top-0 left-0 w-[100vw] h-[100vh] object-cover z-[15] pointer-events-none" />
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* LAYER 2: Dark Overlay */}
+      <div className="fixed inset-0 bg-black/25 z-[1] pointer-events-none" />
+
       {/* SUCCESS OVERLAY */}
       {phase === "success" && successInfo && (
-        <div className="absolute inset-0 z-50 bg-[#00C853] flex flex-col items-center justify-center animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] bg-[#00C853] flex flex-col items-center justify-center animate-in fade-in duration-300">
           <CheckCircle className="w-32 h-32 text-white mb-6 animate-bounce" strokeWidth={1.5} />
-          <h2 className="text-4xl font-display font-bold mb-2 tracking-wide">TIMED {mode === "in" ? "IN" : "OUT"}</h2>
+          <h2 className="text-4xl font-bold mb-2 tracking-wide">TIMED {mode === "in" ? "IN" : "OUT"}</h2>
           <div className="text-2xl font-medium opacity-90">{successInfo.name}</div>
           <div className="text-3xl mt-4 font-mono font-bold bg-black/20 px-6 py-2 rounded-full">{successInfo.time}</div>
+          
+          {/* LAYER 4: Location Text shown on success only */}
+          {(address || location) && (
+            <div className="absolute bottom-6 left-6 text-white/80 text-xs">
+              <div>{address || "Address not found"}</div>
+              {location && <div className="opacity-75">{location.lat.toFixed(5)}, {location.lng.toFixed(5)}</div>}
+            </div>
+          )}
         </div>
       )}
 
-      {/* TOP HEADER */}
-      <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between p-6 bg-gradient-to-b from-[#0F0F1A] to-transparent">
-        <Link to="/auth">
-          <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 rounded-full">
-            <ArrowLeft className="w-6 h-6" />
-          </Button>
-        </Link>
-        <div className="text-xl font-display font-bold tracking-widest text-primary-200">
-          ABL PAYROLL SOLUTIONS
+      {/* LAYER 3: Top Info Bar */}
+      {phase === "active" && (
+        <div className="fixed top-0 left-0 right-0 z-[10] flex flex-col items-center pt-12 pointer-events-none">
+          <div className="text-[32px] font-bold tracking-widest text-white drop-shadow-md mb-2">
+            {enableFaceGate && mode ? `TIME ${mode.toUpperCase()}` : "TIME IN / TIME OUT"}
+          </div>
+          
+          <div className={`text-[28px] font-mono text-white drop-shadow-md h-10 ${shake ? 'animate-shake' : ''}`}>
+            {code}
+          </div>
+          
+          <div className="text-[26px] font-bold text-white drop-shadow-md h-10 mt-1 uppercase">
+            {employeeName}
+          </div>
         </div>
-        <div className="text-right">
-          <div className="text-lg font-mono font-medium">{now.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila' })}</div>
-          <div className="text-xs opacity-60 uppercase tracking-widest">{now.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' })}</div>
-        </div>
-      </div>
+      )}
 
-      {/* PHASE: DIAL PAD */}
-      {phase === "dial" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center pt-20">
-          <div className="text-center mb-10">
-            <h1 className="text-3xl font-display font-semibold mb-4 text-white/80 tracking-wide">ENTER EMPLOYEE ID</h1>
-            <div className={`flex gap-3 justify-center h-16 items-center ${shake ? 'animate-shake' : ''}`}>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div 
-                  key={i} 
-                  className={`w-8 h-8 rounded-full border-2 transition-all duration-200 ${
-                    i < code.length ? "bg-white border-white scale-110" : "border-white/30 bg-transparent"
-                  }`}
-                />
+      {/* LAYER 5: Numpad Overlay / Action Button */}
+      {phase === "active" && (
+        <div className="fixed inset-0 z-[20] flex flex-col items-center justify-end pb-16 pointer-events-none">
+          
+          {!enableFaceGate ? (
+            // NUMPAD
+            <div className="grid grid-cols-3 gap-6 p-6 max-w-sm w-full pointer-events-auto">
+              {keys.map(k => (
+                <button 
+                  key={k} 
+                  onClick={() => press(k)} 
+                  disabled={submitting} 
+                  className="h-20 min-w-[80px] rounded-none bg-transparent border-none text-white text-[36px] font-light drop-shadow-md hover:text-white/80 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {k === "Clear" || k === "Done" ? <span className="text-[24px] uppercase tracking-wider font-medium">{k}</span> : k}
+                </button>
               ))}
             </div>
-            <div className="mt-4 text-white/40 h-6 font-mono tracking-widest text-sm">
-              {code || "Press digits to begin"}
+          ) : (
+            // FACE GATE ACTIONS
+            <div className="flex flex-col items-center gap-6 pointer-events-auto">
+              <button 
+                onClick={submitPunch}
+                disabled={!faceDetected || submitting}
+                className={`px-12 py-5 rounded-full text-2xl font-bold tracking-widest text-white transition-all shadow-xl
+                  ${faceDetected && !submitting ? 'bg-[#3D2DBF] hover:bg-[#4A38E0] active:scale-95' : 'bg-[#3D2DBF]/50 opacity-50 cursor-not-allowed'}`}
+              >
+                {submitting ? "PROCESSING..." : `TIME ${mode?.toUpperCase()}`}
+              </button>
+              
+              <button 
+                onClick={resetKiosk}
+                disabled={submitting}
+                className="text-white/80 hover:text-white uppercase tracking-widest text-sm font-medium drop-shadow-md active:scale-95"
+              >
+                Cancel
+              </button>
             </div>
-          </div>
+          )}
           
-          <div className="grid grid-cols-3 gap-4 p-6 max-w-sm w-full">
-            {keys.map(k => {
-              if (k === "clear") {
-                return (
-                  <button key={k} onClick={() => press(k)} disabled={submitting} 
-                    className="h-20 rounded-2xl bg-transparent border border-white/10 text-white/60 text-lg font-medium hover:bg-white/5 hover:text-white transition-all active:scale-95 disabled:opacity-50 uppercase tracking-wider">
-                    Clear
-                  </button>
-                );
-              }
-              if (k === "done") {
-                return (
-                  <button key={k} onClick={() => press(k)} disabled={submitting || !code} 
-                    className="h-20 rounded-2xl bg-primary text-primary-foreground text-lg font-bold hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-30 disabled:bg-white/10 disabled:text-white/30 shadow-[0_0_20px_rgba(var(--primary),0.3)] uppercase tracking-wider">
-                    Done
-                  </button>
-                );
-              }
-              return (
-                <button key={k} onClick={() => press(k)} disabled={submitting} 
-                  className="h-20 rounded-2xl bg-[#1E1E3A] border border-transparent text-white text-3xl font-light hover:border-primary/50 hover:bg-[#25254A] transition-all active:scale-95 disabled:opacity-50">
-                  {k}
-                </button>
-              );
-            })}
-          </div>
         </div>
       )}
 
-      {/* PHASE: CAMERA */}
-      {phase === "camera" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="relative w-full max-w-md aspect-[3/4] bg-black rounded-3xl overflow-hidden border-4 border-[#1E1E3A] shadow-2xl">
-            {!cameraReady && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#1E1E3A]">
-                <div className="animate-pulse text-white/50 text-sm tracking-widest uppercase">Initializing Camera...</div>
-              </div>
-            )}
-            <video
-              ref={videoRef}
-              playsInline muted autoPlay
-              className="absolute inset-0 w-full h-full object-cover [transform:scaleX(-1)]"
-              onLoadedMetadata={() => {
-                if (overlayCanvasRef.current && videoRef.current) {
-                  overlayCanvasRef.current.width = videoRef.current.videoWidth;
-                  overlayCanvasRef.current.height = videoRef.current.videoHeight;
-                }
-              }}
-            />
-            <canvas ref={overlayCanvasRef} className="absolute inset-0 w-full h-full object-cover z-10 pointer-events-none" />
-            
-            {/* Hidden canvas for taking snapshot */}
-            <canvas ref={canvasRef} className="hidden" />
-
-            {/* Instruction Overlay */}
-            <div className="absolute top-6 left-0 right-0 z-20 text-center drop-shadow-md">
-              <div className="inline-block bg-black/60 backdrop-blur-sm px-4 py-1.5 rounded-full text-sm font-medium tracking-wide">
-                {faceDetected ? "Face Detected" : "Align face in frame"}
-              </div>
-            </div>
-            
-            {/* Mode Toggle (if employee has flexibility) */}
-            <div className="absolute bottom-6 left-0 right-0 z-20 flex justify-center gap-2">
-              <div className="bg-black/60 backdrop-blur-sm p-1 rounded-full flex">
-                <button 
-                  onClick={() => setMode("in")}
-                  className={`px-6 py-2 rounded-full text-sm font-bold tracking-widest transition-colors ${mode === "in" ? "bg-white text-black" : "text-white/60 hover:text-white"}`}>
-                  IN
-                </button>
-                <button 
-                  onClick={() => setMode("out")}
-                  className={`px-6 py-2 rounded-full text-sm font-bold tracking-widest transition-colors ${mode === "out" ? "bg-white text-black" : "text-white/60 hover:text-white"}`}>
-                  OUT
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <div className="mt-8 flex gap-4 w-full max-w-md px-4">
-            <Button 
-              variant="outline" 
-              size="lg" 
-              className="flex-1 bg-transparent border-white/20 text-white hover:bg-white/10"
-              onClick={cancelPunch}
-              disabled={submitting}
-            >
-              Cancel
-            </Button>
-            <Button 
-              size="lg" 
-              className={`flex-[2] text-lg font-bold tracking-widest transition-all ${faceDetected ? 'bg-[#00C853] hover:bg-[#00E676] text-black shadow-[0_0_30px_rgba(0,200,83,0.4)]' : 'bg-white/10 text-white/30'}`}
-              disabled={!faceDetected || submitting}
-              onClick={submitPunch}
-            >
-              {submitting ? "PROCESSING..." : `TIME ${mode.toUpperCase()}`}
-            </Button>
-          </div>
-          
-          <div className="mt-4 text-center">
-            <div className="text-xl font-medium tracking-wide">{employeeName}</div>
-          </div>
-        </div>
-      )}
-      
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes shake {
           0%, 100% { transform: translateX(0); }

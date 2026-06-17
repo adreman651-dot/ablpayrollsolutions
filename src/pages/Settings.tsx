@@ -508,7 +508,7 @@ export default function Settings() {
               <div className="mt-8 bg-blue-50 dark:bg-blue-950/20 text-blue-800 dark:text-blue-300 p-4 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-900/50">
                 <Info className="w-5 h-5 shrink-0 mt-0.5" />
                 <div className="text-sm leading-relaxed">
-                  <strong>ℹ️ Voice Tips:</strong> Record your MP3 at a natural speaking pace. For the greeting, say the phrase without the employee name — the system will append it automatically using text-to-speech if needed. Recommended duration: 1–3 seconds per clip. Supported format: MP3 only.
+                  <strong>ℹ️ Tips:</strong> Keep clips 1–3 seconds. For greeting, record without the employee name — TTS will handle the name if needed. MP3 format only.
                 </div>
               </div>
             </div>
