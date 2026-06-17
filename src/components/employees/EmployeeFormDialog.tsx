@@ -26,6 +26,9 @@ interface EmployeeFormData {
   sss_schedule: string;
   phic_schedule: string;
   hdmf_schedule: string;
+  sss_contribution: number;
+  phic_contribution: number;
+  hdmf_contribution: number;
 }
 
 interface Props {
@@ -178,6 +181,13 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           <div className="space-y-2">
             <Label>SSS Number</Label>
             <Input value={form.sss_number} onChange={e => setForm({ ...form, sss_number: e.target.value })} placeholder="XX-XXXXXXX-X" />
+            <Input
+              type="number" min="0" step="0.01"
+              value={form.sss_contribution}
+              onChange={e => setForm({ ...form, sss_contribution: parseFloat(e.target.value) || 0 })}
+              placeholder="SSS Contribution Amount (₱/month)"
+            />
+            <p className="text-xs text-muted-foreground">Leave 0 to auto-compute from salary table</p>
             <Select value={form.sss_schedule || "both"} onValueChange={v => setForm({ ...form, sss_schedule: v })}>
               <SelectTrigger><SelectValue placeholder="Deduction Schedule" /></SelectTrigger>
               <SelectContent>
@@ -191,6 +201,13 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           <div className="space-y-2">
             <Label>PhilHealth Number</Label>
             <Input value={form.philhealth_number} onChange={e => setForm({ ...form, philhealth_number: e.target.value })} placeholder="XXXX-XXXXXXXX-X" />
+            <Input
+              type="number" min="0" step="0.01"
+              value={form.phic_contribution}
+              onChange={e => setForm({ ...form, phic_contribution: parseFloat(e.target.value) || 0 })}
+              placeholder="PhilHealth Contribution Amount (₱/month)"
+            />
+            <p className="text-xs text-muted-foreground">Leave 0 to auto-compute (5% of salary)</p>
             <Select value={form.phic_schedule || "both"} onValueChange={v => setForm({ ...form, phic_schedule: v })}>
               <SelectTrigger><SelectValue placeholder="Deduction Schedule" /></SelectTrigger>
               <SelectContent>
@@ -204,6 +221,13 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           <div className="space-y-2">
             <Label>Pag-IBIG Number</Label>
             <Input value={form.pagibig_number} onChange={e => setForm({ ...form, pagibig_number: e.target.value })} placeholder="XXXX-XXXX-XXXX" />
+            <Input
+              type="number" min="0" step="0.01"
+              value={form.hdmf_contribution}
+              onChange={e => setForm({ ...form, hdmf_contribution: parseFloat(e.target.value) || 0 })}
+              placeholder="HDMF Contribution Amount (₱/month)"
+            />
+            <p className="text-xs text-muted-foreground">Leave 0 to use system default (₱400)</p>
             <Select value={form.hdmf_schedule || "both"} onValueChange={v => setForm({ ...form, hdmf_schedule: v })}>
               <SelectTrigger><SelectValue placeholder="Deduction Schedule" /></SelectTrigger>
               <SelectContent>

@@ -87,6 +87,7 @@ export type Database = {
           employee_code: string
           employment_status: string
           first_name: string
+          hdmf_contribution: number
           hdmf_schedule: string
           hire_date: string
           id: string
@@ -96,10 +97,12 @@ export type Database = {
           middle_name: string | null
           pagibig_number: string | null
           payroll_type: string
+          phic_contribution: number
           phic_schedule: string
           philhealth_number: string | null
           phone: string | null
           profile_photo_url: string | null
+          sss_contribution: number
           sss_number: string | null
           sss_schedule: string
           tin_number: string | null
@@ -115,6 +118,7 @@ export type Database = {
           employee_code: string
           employment_status?: string
           first_name: string
+          hdmf_contribution?: number
           hdmf_schedule?: string
           hire_date?: string
           id?: string
@@ -124,10 +128,12 @@ export type Database = {
           middle_name?: string | null
           pagibig_number?: string | null
           payroll_type?: string
+          phic_contribution?: number
           phic_schedule?: string
           philhealth_number?: string | null
           phone?: string | null
           profile_photo_url?: string | null
+          sss_contribution?: number
           sss_number?: string | null
           sss_schedule?: string
           tin_number?: string | null
@@ -143,6 +149,7 @@ export type Database = {
           employee_code?: string
           employment_status?: string
           first_name?: string
+          hdmf_contribution?: number
           hdmf_schedule?: string
           hire_date?: string
           id?: string
@@ -152,10 +159,12 @@ export type Database = {
           middle_name?: string | null
           pagibig_number?: string | null
           payroll_type?: string
+          phic_contribution?: number
           phic_schedule?: string
           philhealth_number?: string | null
           phone?: string | null
           profile_photo_url?: string | null
+          sss_contribution?: number
           sss_number?: string | null
           sss_schedule?: string
           tin_number?: string | null

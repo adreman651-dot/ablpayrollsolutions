@@ -39,6 +39,7 @@ const emptyForm = {
   sss_number: "", philhealth_number: "", pagibig_number: "", tin_number: "",
   employment_status: "active", payroll_type: "monthly_rate",
   sss_schedule: "both", phic_schedule: "both", hdmf_schedule: "both",
+  sss_contribution: 0, phic_contribution: 0, hdmf_contribution: 0,
 };
 
 function payrollTypeLabel(type: string | null): string {
@@ -102,6 +103,9 @@ export default function Employees() {
         sss_schedule: form.sss_schedule || "both",
         phic_schedule: form.phic_schedule || "both",
         hdmf_schedule: form.hdmf_schedule || "both",
+        sss_contribution: form.sss_contribution || 0,
+        phic_contribution: form.phic_contribution || 0,
+        hdmf_contribution: form.hdmf_contribution || 0,
       };
       if (editing) {
         const { error } = await supabase.from("employees").update(payload).eq("id", editing.id);
@@ -144,6 +148,9 @@ export default function Employees() {
       sss_schedule: emp.sss_schedule || "both",
       phic_schedule: emp.phic_schedule || "both",
       hdmf_schedule: emp.hdmf_schedule || "both",
+      sss_contribution: emp.sss_contribution || 0,
+      phic_contribution: emp.phic_contribution || 0,
+      hdmf_contribution: emp.hdmf_contribution || 0,
     });
     setDialogOpen(true);
   };
