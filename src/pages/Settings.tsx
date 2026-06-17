@@ -237,7 +237,9 @@ export default function Settings() {
               <TableBody>
                 {loading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
-                ) : settings.map(s => (
+                ) : settings
+                    .filter(s => !['philhealth_rate', 'pagibig_employee', 'pagibig_employer', 'sss_employer_rate', 'sss_employee_rate', 'phic_rate', 'hdmf_employee', 'hdmf_employer', 'enable_voice_announcement'].includes(s.key))
+                    .map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-sm">{s.key}</TableCell>
                     <TableCell>

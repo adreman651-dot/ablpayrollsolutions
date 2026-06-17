@@ -38,147 +38,173 @@ export interface PayslipData {
   grossPay?: number;
 }
 
-// jsPDF's built-in helvetica font lacks the ₱ (U+20B1) glyph.
-// Use "PHP " prefix so amounts always render in the exported PDF.
+// Format with ₱ peso sign
 function peso(n: number): string {
   const v = Number(n) || 0;
-  return "₱" + new Intl.NumberFormat("en-PH", {
+  return "\u20B1" + new Intl.NumberFormat("en-PH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(v);
 }
 
+// Draw a single payslip copy at a given Y offset (in mm)
+function drawSlip(
+  doc: jsPDF,
+  p: PayslipData,
+  yStart: number,
+  copyLabel: string,
+  slipHeight: number
+) {
+  const PAGE_W = 215.9; // Letter width in mm
+  const leftX = 12;
+  const rightX = 112;
+  const leftAmtX = 102;
+  const rightAmtX = 203;
+
+  const grossPay = p.grossPay ?? p.totalTaxable;
+  const tax = p.withholdingTax ?? 0;
+  const dailyRate = p.dailyRate || 0;
+
+  let y = yStart;
+
+  // ── Copy Label Banner ──────────────────────────────────────────────
+  doc.setFillColor(230, 230, 230);
+  doc.rect(leftX, y, PAGE_W - 24, 5, "F");
+  doc.setFont("helvetica", "bold").setFontSize(7).setTextColor(80, 80, 80);
+  doc.text(copyLabel, PAGE_W / 2, y + 3.5, { align: "center" });
+  y += 7;
+
+  // ── Header ──────────────────────────────────────────────────────────
+  doc.setTextColor(0, 0, 0);
+  doc.setFont("helvetica", "bold").setFontSize(13);
+  doc.text(p.companyName, PAGE_W / 2, y, { align: "center" });
+  y += 5;
+  doc.setFont("helvetica", "normal").setFontSize(9);
+  doc.text("PAYSLIP", PAGE_W / 2, y, { align: "center" });
+  y += 7;
+
+  // ── Meta Grid ───────────────────────────────────────────────────────
+  doc.setFontSize(8);
+  doc.text(`Payroll Period: ${p.periodStart} to ${p.periodEnd}`, leftX, y);
+  doc.text(`Payment Date: ${p.paymentDate}`, rightX, y);
+  y += 5;
+  doc.text(`Employee Code: ${p.employeeCode}`, leftX, y);
+  doc.text(`Department: ${p.department}`, rightX, y);
+  y += 5;
+  doc.setFont("helvetica", "bold");
+  doc.text(`Employee: ${p.employeeName}`, leftX, y);
+  doc.setFont("helvetica", "normal");
+  y += 4;
+
+  // ── Divider ──────────────────────────────────────────────────────────
+  doc.setDrawColor(120, 120, 120);
+  doc.line(leftX, y, PAGE_W - 12, y);
+  y += 5;
+
+  // ── Column Headers ───────────────────────────────────────────────────
+  doc.setFont("helvetica", "bold").setFontSize(9);
+  doc.text("EARNINGS", leftX, y);
+  doc.text("DEDUCTIONS", rightX, y);
+  y += 5;
+  doc.setFont("helvetica", "normal").setFontSize(8);
+
+  // ── Build Rows ──────────────────────────────────────────────────────
+  const earnings: Array<[string, number | null, boolean]> = [
+    [`No. of Days Worked: ${p.daysWorked}`, null, false],
+    [`Daily Rate`, dailyRate, true],
+    [`Basic Pay (${p.daysWorked} days × ${peso(dailyRate)})`, grossPay, true],
+  ];
+  if (p.holidayPay > 0) earnings.push(["Holiday Pay", p.holidayPay, true]);
+  if (p.riceAllowance && p.riceAllowance > 0) earnings.push(["Rice Allowance", p.riceAllowance, true]);
+  if (p.riceAllowance2 && p.riceAllowance2 > 0) earnings.push(["Rice Allowance 2", p.riceAllowance2, true]);
+  if (p.totalNonTaxable > 0 && !p.riceAllowance && !p.riceAllowance2) {
+    earnings.push(["Non-Taxable Allowances", p.totalNonTaxable, true]);
+  }
+
+  const deductions: Array<[string, number]> = [];
+  if (p.sss > 0)  deductions.push(["SSS Contribution", p.sss]);
+  if (p.phic > 0) deductions.push(["PhilHealth (PHIC)", p.phic]);
+  if (p.hdmf > 0) deductions.push(["Pag-IBIG (HDMF)", p.hdmf]);
+  if (tax > 0)    deductions.push(["Withholding Tax", tax]);
+  if ((p.cashAdvance || 0) > 0) deductions.push(["Cash Advance / Loan", p.cashAdvance!]);
+  if (p.otherDeductions > 0) deductions.push(["Other Deductions", p.otherDeductions]);
+
+  const startY = y;
+  let ly = startY;
+  let ry = startY;
+
+  for (const [label, amount, showAmt] of earnings) {
+    doc.text(label, leftX, ly);
+    if (showAmt && amount !== null) {
+      doc.text(peso(amount), leftAmtX, ly, { align: "right" });
+    }
+    ly += 5;
+  }
+
+  for (const [label, amount] of deductions) {
+    doc.text(label, rightX, ry);
+    doc.text(peso(amount), rightAmtX, ry, { align: "right" });
+    ry += 5;
+  }
+
+  // ── Subtotal Lines ───────────────────────────────────────────────────
+  const subY = Math.max(ly, ry) + 2;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(leftX, subY, leftAmtX, subY);
+  doc.line(rightX, subY, rightAmtX, subY);
+
+  doc.setFont("helvetica", "bold").setFontSize(8);
+  doc.text("GROSS PAY", leftX, subY + 5);
+  doc.text(peso(grossPay), leftAmtX, subY + 5, { align: "right" });
+  doc.text("TOTAL DEDUCTIONS", rightX, subY + 5);
+  doc.text(peso(p.totalDeductions), rightAmtX, subY + 5, { align: "right" });
+
+  // ── NET PAY band ─────────────────────────────────────────────────────
+  const netY = subY + 10;
+  doc.setFillColor(15, 52, 96);
+  doc.rect(leftX, netY, PAGE_W - 24, 10, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold").setFontSize(11);
+  doc.text("NET PAY", leftX + 4, netY + 7);
+  doc.text(peso(Math.max(0, p.netPay)), rightAmtX, netY + 7, { align: "right" });
+  doc.setTextColor(0, 0, 0);
+
+  // ── Signatures ───────────────────────────────────────────────────────
+  const sigY = netY + 17;
+  doc.setFont("helvetica", "normal").setFontSize(7);
+  doc.setDrawColor(100, 100, 100);
+  doc.line(leftX, sigY + 5, leftX + 50, sigY + 5);
+  doc.text("Prepared By", leftX + 25, sigY + 9, { align: "center" });
+  doc.line(leftX + 60, sigY + 5, leftX + 110, sigY + 5);
+  doc.text("Approved By", leftX + 85, sigY + 9, { align: "center" });
+  doc.line(leftX + 120, sigY + 5, leftX + 180, sigY + 5);
+  doc.text("Received By (Employee Signature over Printed Name)", leftX + 150, sigY + 9, { align: "center" });
+}
+
 export function generatePayslipsPDF(payslips: PayslipData[]): jsPDF {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const PAGE_W = 210;
-  const slipsPerPage = 2;
-  const slipHeight = 140;
+  // Letter: 215.9 mm x 279.4 mm
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
+  const PAGE_H = 279.4;
+  const SLIP_H = (PAGE_H / 2) - 4; // half-page height with small margin
 
   payslips.forEach((p, index) => {
-    if (index > 0 && index % slipsPerPage === 0) doc.addPage();
-    const y = (index % slipsPerPage) * slipHeight + 12;
+    if (index > 0) doc.addPage();
 
-    const grossPay = p.grossPay ?? p.totalTaxable;
-    const tax = p.withholdingTax ?? Math.max(
-      0,
-      p.totalDeductions - (p.sss + p.phic + p.hdmf + (p.cashAdvance || 0) + (p.otherDeductions || 0))
-    );
+    // ── TOP HALF: HR COPY ─────────────────────────────────────────────
+    drawSlip(doc, p, 4, "HR COPY", SLIP_H);
 
-    // ── Header ──
-    doc.setFont("helvetica", "bold").setFontSize(14);
-    doc.text(p.companyName, PAGE_W / 2, y, { align: "center" });
-    doc.setFont("helvetica", "normal").setFontSize(10);
-    doc.text("PAYSLIP", PAGE_W / 2, y + 5, { align: "center" });
-
-    // ── Meta ──
-    doc.setFontSize(9);
-    doc.text(`Payroll Period: ${p.periodStart} - ${p.periodEnd}`, 15, y + 12);
-    doc.text(`Payment Date: ${p.paymentDate}`, 15, y + 17);
-    doc.text(`Employee ID: ${p.employeeCode}`, 115, y + 12);
-    doc.text(`Department: ${p.department}`, 115, y + 17);
-    doc.setFont("helvetica", "bold");
-    doc.text(`Employee: ${p.employeeName}`, 15, y + 22);
-    doc.setFont("helvetica", "normal");
-
-    // Divider
-    doc.setDrawColor(180);
-    doc.line(15, y + 25, 195, y + 25);
-
-    // ── Two columns: EARNINGS (left) / DEDUCTIONS (right) ──
-    const leftX = 15;
-    const leftAmtX = 95;
-    const rightX = 110;
-    const rightAmtX = 195;
-    let ly = y + 32;
-    let ry = y + 32;
-
-    // EARNINGS header
-    doc.setFont("helvetica", "bold").setFontSize(10);
-    doc.text("EARNINGS", leftX, ly);
-    doc.text("DEDUCTIONS", rightX, ry);
-    ly += 6; ry += 6;
-    doc.setFont("helvetica", "normal").setFontSize(9);
-
-    const earnings: Array<[string, number]> = [
-      ["Basic Salary", p.basicSalary],
-      ["Daily Rate", p.dailyRate || 0],
-      [`No. of days worked: ${p.daysWorked}`, 0], // The value is 0 here so we format differently later or just leave it
-    ];
-    if (p.holidayPay) earnings.push(["Holiday Pay", p.holidayPay]);
-    if (p.riceAllowance) earnings.push(["Rice Allowance", p.riceAllowance]);
-    if (p.riceAllowance2) earnings.push(["Rice Allowance 2", p.riceAllowance2]);
-    if (p.totalNonTaxable && !p.riceAllowance && !p.riceAllowance2) {
-      earnings.push(["Non-Taxable Allowances", p.totalNonTaxable]);
-    }
-    for (const [label, amount] of earnings) {
-      doc.text(label, leftX, ly);
-      if (label.startsWith("No. of days worked")) {
-         // Just the text
-      } else {
-         doc.text(peso(amount), leftAmtX, ly, { align: "right" });
-      }
-      ly += 5;
-    }
-
-    const deductions: Array<[string, number]> = [
-      ["SSS Contribution", p.sss],
-      ["PhilHealth Contribution", p.phic],
-      ["Pag-IBIG (HDMF) Contribution", p.hdmf],
-      ["Withholding Tax", tax],
-    ];
-    if (p.cashAdvance) deductions.push(["Cash Advance / Loan", p.cashAdvance]);
-    if (p.otherDeductions) deductions.push(["Other Deductions", p.otherDeductions]);
-    for (const [label, amount] of deductions) {
-      doc.text(label, rightX, ry);
-      doc.text(peso(amount), rightAmtX, ry, { align: "right" });
-      ry += 5;
-    }
-
-    // ── Subtotals ──
-    const subY = Math.max(ly, ry) + 2;
-    doc.setDrawColor(200);
-    doc.line(leftX, subY, leftAmtX, subY);
-    doc.line(rightX, subY, rightAmtX, subY);
-
-    doc.setFont("helvetica", "bold").setFontSize(9);
-    doc.text("GROSS PAY", leftX, subY + 5);
-    doc.text(peso(grossPay), leftAmtX, subY + 5, { align: "right" });
-    doc.text("TOTAL DEDUCTIONS", rightX, subY + 5);
-    doc.text(peso(p.totalDeductions), rightAmtX, subY + 5, { align: "right" });
-
-    // ── NET PAY band ──
-    const netY = subY + 12;
-    doc.setFillColor(15, 52, 96);
-    doc.rect(15, netY, 180, 11, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold").setFontSize(12);
-    doc.text("NET PAY", 20, netY + 7.5);
-    doc.text(peso(Math.max(0, p.netPay)), 190, netY + 7.5, { align: "right" });
+    // ── CUT LINE ─────────────────────────────────────────────────────
+    const cutY = PAGE_H / 2;
+    doc.setDrawColor(100, 100, 100);
+    doc.setLineDashPattern([3, 2], 0);
+    doc.line(6, cutY, 210, cutY);
+    doc.setLineDashPattern([], 0);
+    doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(120, 120, 120);
+    doc.text("✂  CUT HERE", 108, cutY - 1, { align: "center" });
     doc.setTextColor(0, 0, 0);
 
-    // ── Footer summary ──
-    const footY = netY + 17;
-    doc.setFont("helvetica", "normal").setFontSize(8);
-    doc.text(`Days Worked: ${p.daysWorked}    Hours: ${p.hoursWorked.toFixed(2)}`, 15, footY);
-    doc.text(`Daily Rate: ${peso(p.dailyRate || 0)}`, 115, footY);
-
-    // Signatures
-    const sigY = footY + 10;
-    doc.setFontSize(8);
-    doc.line(20, sigY + 6, 75, sigY + 6);
-    doc.text("Prepared By", 47.5, sigY + 10, { align: "center" });
-    doc.line(85, sigY + 6, 135, sigY + 6);
-    doc.text("Approved By", 110, sigY + 10, { align: "center" });
-    doc.line(145, sigY + 6, 195, sigY + 6);
-    doc.text("Received By (Employee)", 170, sigY + 10, { align: "center" });
-
-    // Cut line between slips
-    if (index % slipsPerPage === 0 && index < payslips.length - 1) {
-      doc.setDrawColor(140);
-      try { (doc as any).setLineDashPattern([2, 2], 0); } catch {}
-      doc.line(10, y + slipHeight - 4, 200, y + slipHeight - 4);
-      try { (doc as any).setLineDashPattern([], 0); } catch {}
-    }
+    // ── BOTTOM HALF: EMPLOYEE COPY ────────────────────────────────────
+    drawSlip(doc, p, cutY + 3, "EMPLOYEE COPY", SLIP_H);
   });
 
   return doc;

@@ -10,8 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle, MapPin, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
-  formatCurrency, computeSSS, computePhilHealth, computePagIBIG,
-  computeWithholdingTax, computeDailyRate, computeHourlyRate, WORKING_DAYS_PER_MONTH,
+  formatCurrency, computeWithholdingTax, computeDailyRate, WORKING_DAYS_PER_MONTH,
 } from "@/lib/payroll-utils";
 import { useAuth } from "@/hooks/useAuth";
 import { exportPayrollExcel } from "@/lib/payroll-export";
@@ -193,10 +192,6 @@ export default function Payroll() {
     }
     setProcessing(true);
     try {
-      const { data: pagibigData } = await supabase.from("system_settings").select("key, value").in("key", ["pagibig_employee", "pagibig_employer"]);
-      const pagibigMap = Object.fromEntries((pagibigData || []).map(d => [d.key, parseFloat(d.value)]));
-      const pagibigOverrides = { employee: pagibigMap.pagibig_employee || 400, employer: pagibigMap.pagibig_employer || 400 };
-
       const { data: employees, error: empErr } = await supabase.from("employees")
         .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution").eq("employment_status", "active");
       if (empErr) throw empErr;
@@ -206,20 +201,21 @@ export default function Payroll() {
       const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
       const workingDaysInPeriod = Math.min(totalDays, WORKING_DAYS_PER_MONTH);
       const cycleFactor = totalDays < 20 ? 0.5 : 1;
-      const currentCutoff = run.cutoff_type || "both"; // '15th', '30th', or 'both'
+      const currentCutoff = run.cutoff_type || "both";
 
       const items = [];
 
       for (const emp of employees) {
+        // Only count days where employee has BOTH time_in and time_out
         const { data: attendance } = await supabase.from("attendance")
-          .select("late_minutes, status, date")
+          .select("late_minutes, status, date, time_in, time_out")
           .eq("employee_id", emp.id)
           .gte("date", run.period_start)
           .lte("date", run.period_end);
 
-        const totalLateMinutes = (attendance || []).reduce((sum, a) => sum + (a.late_minutes || 0), 0);
-        const daysPresent = (attendance || []).filter(a => a.status === "present" || a.status === "late" || a.status === "On Time").length;
-        const absences = Math.max(0, workingDaysInPeriod - daysPresent);
+        const daysPresent = (attendance || []).filter(a =>
+          a.time_in && a.time_out  // Both must be present
+        ).length;
 
         const { data: leaveData } = await supabase.from("leaves")
           .select("duration")
@@ -230,40 +226,28 @@ export default function Payroll() {
         const leaveDays = (leaveData || []).reduce((sum, l) => sum + (l.duration || 0), 0);
 
         const dailyRate = getEffectiveDailyRate(emp.basic_salary, emp.payroll_type);
-        const hourlyRate = dailyRate / 8;
-
         const effectiveDays = daysPresent + leaveDays;
         const basicPay = +(dailyRate * effectiveDays).toFixed(2);
         const grossPay = basicPay;
-        const absenceDeductions = 0;  // accounted for by only paying worked days
-        const lateDeductions = 0;
-
-        const monthlySalary = emp.payroll_type === "daily_rate"
-          ? emp.basic_salary * WORKING_DAYS_PER_MONTH
-          : emp.payroll_type === "hourly_rate"
-          ? emp.basic_salary * 8 * WORKING_DAYS_PER_MONTH
-          : emp.basic_salary;
 
         // Check if deduction schedules match current run cutoff
         const shouldDeductSSS = emp.sss_schedule === "both" || emp.sss_schedule === currentCutoff;
         const shouldDeductPHIC = emp.phic_schedule === "both" || emp.phic_schedule === currentCutoff;
         const shouldDeductHDMF = emp.hdmf_schedule === "both" || emp.hdmf_schedule === currentCutoff;
 
-        const sss = computeSSS(monthlySalary);
-        const ph = computePhilHealth(monthlySalary);
-        const pi = computePagIBIG(monthlySalary, pagibigOverrides);
-
-        const sssMonthly = (emp as any).sss_contribution > 0 ? (emp as any).sss_contribution : sss.employee;
-        const phMonthly = (emp as any).phic_contribution > 0 ? (emp as any).phic_contribution : ph.employee;
-        const piMonthly = (emp as any).hdmf_contribution > 0 ? (emp as any).hdmf_contribution : pi.employee;
+        // Strictly use employee-specific amounts. If 0 or blank, deduct 0.
+        const sssMonthly = Number((emp as any).sss_contribution) || 0;
+        const phMonthly = Number((emp as any).phic_contribution) || 0;
+        const piMonthly = Number((emp as any).hdmf_contribution) || 0;
 
         const sssEE = shouldDeductSSS ? +(sssMonthly * cycleFactor).toFixed(2) : 0;
         const phEE = shouldDeductPHIC ? +(phMonthly * cycleFactor).toFixed(2) : 0;
         const piEE = shouldDeductHDMF ? +(piMonthly * cycleFactor).toFixed(2) : 0;
 
-        const taxableIncome = Math.max(0, grossPay - absenceDeductions - lateDeductions - sssEE - phEE - piEE);
+        const taxableIncome = Math.max(0, grossPay - sssEE - phEE - piEE);
         const tax = computeWithholdingTax(taxableIncome);
 
+        // Cash Advance = per_cutoff_amortization from approved active loans
         const { data: loans } = await supabase.from("loans")
           .select("per_cutoff_amortization").eq("employee_id", emp.id).eq("status", "approved");
         const loanDeductions = +((loans || []).reduce((sum, l) => sum + (l.per_cutoff_amortization || 0), 0)).toFixed(2);
@@ -276,13 +260,13 @@ export default function Payroll() {
           employee_id: emp.id,
           basic_pay: grossPay,
           gross_pay: grossPay,
-          late_deductions: +lateDeductions.toFixed(2),
-          absence_deductions: +absenceDeductions.toFixed(2),
+          late_deductions: 0,
+          absence_deductions: 0,
           sss_contribution: sssEE,
           philhealth_contribution: phEE,
           pagibig_contribution: piEE,
           withholding_tax: +tax.toFixed(2),
-          loan_deductions: 0, // Using cash advance instead for loans
+          loan_deductions: 0,
           cash_advance: loanDeductions,
           other_deductions: 0,
           total_deductions: totalDeductions,
