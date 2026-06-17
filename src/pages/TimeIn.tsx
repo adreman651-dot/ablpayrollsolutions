@@ -46,9 +46,18 @@ export default function TimeIn() {
   const [faceApiLoaded, setFaceApiLoaded] = useState(false);
   const [enableFaceGate, setEnableFaceGate] = useState(false);
   const [successInfo, setSuccessInfo] = useState<{ name: string; time: string; mode: Mode } | null>(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   const detectionIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Fetch voice setting on mount
+  useEffect(() => {
+    supabase.from("system_settings").select("value").eq("key", "enable_voice_announcement").single()
+      .then(({ data }) => {
+        if (data) setVoiceEnabled(data.value === 'true');
+      });
+  }, []);
 
   // ─── Init: Camera + GPS + face-api ───────────────────────────────────────
   useEffect(() => {
@@ -185,28 +194,50 @@ export default function TimeIn() {
   }, [enableFaceGate, cameraReady, faceApiLoaded, phase]);
 
   // ─── Voice helper ────────────────────────────────────────────────────────
-  const playVoiceAsset = async (filename: string, fallbackText: string) => {
+  const speakAnnouncement = (type: "greeting" | "in" | "out", empName: string, empCodeStr: string, timeStr?: string) => {
+    if (!voiceEnabled || !("speechSynthesis" in window)) return;
+    
+    // Greeting rules
+    const hour = new Date().getHours();
+    let greeting = "Good Morning";
+    if (hour >= 12 && hour < 18) greeting = "Good Afternoon";
+    else if (hour >= 18) greeting = "Good Evening";
+
+    let message = "";
+    if (type === "greeting") {
+      message = `${greeting} ${empName}.`;
+    } else if (type === "in") {
+      message = `${greeting} ${empName}. Employee Code ${empCodeStr}. Your Time In has been recorded successfully at ${timeStr}.`;
+    } else if (type === "out") {
+      message = `${greeting} ${empName}. Employee Code ${empCodeStr}. Your Time Out has been recorded successfully at ${timeStr}. Thank you and have a safe trip home.`;
+    }
+
+    const u = new SpeechSynthesisUtterance(message);
+    u.lang = "en-US";
+    u.rate = 0.9;
+    u.pitch = 1.0;
+    u.volume = 1.0;
+
+    // Voice Selection Priority
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoices = ["Google US English", "Microsoft David", "Microsoft Aria", "Microsoft Jenny"];
+    let selectedVoice = null;
+    
+    for (const pref of preferredVoices) {
+      selectedVoice = voices.find(v => v.name.includes(pref));
+      if (selectedVoice) break;
+    }
+    
+    if (!selectedVoice) {
+      selectedVoice = voices.find(v => v.lang === "en-US") || voices[0];
+    }
+    
+    if (selectedVoice) u.voice = selectedVoice;
+
     try {
-      const { data } = supabase.storage.from("voice-assets").getPublicUrl(filename);
-      const res = await fetch(data.publicUrl + "?t=" + Date.now());
-      if (!res.ok) throw new Error("not found");
-      const buf = await res.arrayBuffer();
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-      const ctx = new AudioContext();
-      const audioBuffer = await ctx.decodeAudioData(buf);
-      const source = ctx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(ctx.destination);
-      source.start(0);
-    } catch {
-      if ("speechSynthesis" in window) {
-        const u = new SpeechSynthesisUtterance(fallbackText);
-        u.lang = "en-US"; u.rate = 1.0; u.pitch = 1.1; u.volume = 1.0;
-        const voices = window.speechSynthesis.getVoices();
-        const female = voices.find(v => v.lang === "en-US" && v.name.toLowerCase().includes("female"));
-        if (female) u.voice = female;
-        window.speechSynthesis.speak(u);
-      }
+      window.speechSynthesis.speak(u);
+    } catch (e) {
+      console.error("Speech Synthesis failed", e);
     }
   };
 
@@ -253,7 +284,10 @@ export default function TimeIn() {
     // We no longer auto-set the mode. Let the user choose via the buttons.
     setMode(null);
 
-    await playVoiceAsset("greeting.mp3", `Hello, ${employee.first_name}!`);
+    // Make sure voices are loaded by calling getVoices once before speaking
+    if ("speechSynthesis" in window) window.speechSynthesis.getVoices();
+    
+    speakAnnouncement("greeting", fullName, padded);
     setEnableFaceGate(true);
     setSubmitting(false);
   };
@@ -326,10 +360,11 @@ export default function TimeIn() {
       const res = data as any;
       if (!res?.ok) throw new Error(res?.error || "Punch failed");
 
-      if (selectedMode === "in") playVoiceAsset("timein_success.mp3", "Successfully timed in!");
-      else playVoiceAsset("timeout_success.mp3", "Successfully timed out!");
-
       const timeStr = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
+      
+      if (selectedMode === "in") speakAnnouncement("in", employeeName, employeeCodeStr, timeStr);
+      else speakAnnouncement("out", employeeName, employeeCodeStr, timeStr);
+
       setSuccessInfo({ name: employeeName, time: timeStr, mode: selectedMode });
       setPhase("success");
 

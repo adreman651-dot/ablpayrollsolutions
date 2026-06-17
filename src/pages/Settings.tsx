@@ -9,165 +9,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle } from "lucide-react";
-import { formatCurrency } from "@/lib/payroll-utils";
-import { Play, Square, FileAudio, Info } from "lucide-react";
+import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle, Info, Volume2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
-function VoiceUploadCard({ title, description, filename }: { title: string, description: string, filename: string }) {
-  const [isUploading, setIsUploading] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [hasFile, setHasFile] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    checkFile();
-  }, []);
-
-  const checkFile = async () => {
-    const { data } = await supabase.storage.from("voice-assets").list("", { search: filename });
-    if (data && data.some(f => f.name === filename)) {
-      setHasFile(true);
-    } else {
-      setHasFile(false);
-    }
-  };
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const validTypes = ["audio/mpeg", "audio/mp3"];
-    if (!validTypes.includes(file.type) && !file.name.endsWith(".mp3")) {
-      toast.error("Please upload an MP3 file (.mp3)");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("File size must be less than 5MB");
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      // Remove old file first to avoid conflicts
-      await supabase.storage.from("voice-assets").remove([filename]).catch(() => {});
-
-      const { error } = await supabase.storage
-        .from("voice-assets")
-        .upload(filename, file, {
-          upsert: true,
-          cacheControl: "3600",
-          contentType: "audio/mpeg",
-        });
-      if (error) {
-        if (error.message?.includes("Bucket not found")) {
-          throw new Error("Storage bucket 'voice-assets' not found. Please run the latest DB migration in your Supabase dashboard.");
-        }
-        if (error.message?.includes("row-level security") || error.message?.includes("policy")) {
-          throw new Error("Permission denied. Make sure you are logged in as an admin.");
-        }
-        throw error;
-      }
-      toast.success(`${title} uploaded successfully!`);
-      setHasFile(true);
-    } catch (err: any) {
-      toast.error(err.message || "Upload failed");
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const handleRemove = async () => {
-    try {
-      await supabase.storage.from("voice-assets").remove([filename]);
-      toast.success("Voice removed successfully");
-      setHasFile(false);
-      if (isPlaying) {
-        audioRef.current?.pause();
-        setIsPlaying(false);
-      }
-    } catch (err: any) {
-      toast.error("Remove failed: " + err.message);
-    }
-  };
-
-  const handlePreview = async () => {
-    if (isPlaying) {
-      audioRef.current?.pause();
-      setIsPlaying(false);
-      return;
-    }
-
-    const { data } = supabase.storage.from("voice-assets").getPublicUrl(filename);
-    if (data.publicUrl) {
-      const audio = new Audio(`${data.publicUrl}?t=${Date.now()}`);
-      audioRef.current = audio;
-      audio.onended = () => setIsPlaying(false);
-      audio.play().catch(() => toast.error("Could not play audio"));
-      setIsPlaying(true);
-    }
-  };
-
-  return (
-    <div className="border border-border rounded-xl p-5 bg-card flex flex-col gap-4">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <div className="p-2 bg-primary/10 rounded-lg text-primary">
-            <FileAudio className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="font-semibold">{title}</h4>
-            <p className="text-sm text-muted-foreground">{description}</p>
-          </div>
-        </div>
-      </div>
-      
-      <div className="bg-muted/30 p-3 rounded-lg text-sm flex items-center justify-between">
-        <span className="text-muted-foreground">Current:</span>
-        <span className="font-mono font-medium">{hasFile ? `${filename}` : "Using TTS"}</span>
-      </div>
-
-      <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-        <Button 
-          variant={isPlaying ? "destructive" : "secondary"} 
-          size="sm" 
-          onClick={handlePreview}
-          disabled={!hasFile}
-          className="flex-1 min-w-[100px]"
-        >
-          {isPlaying ? <><Square className="w-4 h-4 mr-2" /> Stop</> : <><Play className="w-4 h-4 mr-2" /> Preview</>}
-        </Button>
-        <input 
-          type="file" 
-          accept="audio/mpeg" 
-          className="hidden" 
-          ref={fileInputRef} 
-          onChange={handleUpload} 
-        />
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isUploading}
-          className="flex-1 min-w-[120px]"
-        >
-          <Upload className="w-4 h-4 mr-2" /> {isUploading ? "Uploading..." : "Upload MP3"}
-        </Button>
-        {hasFile && (
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={handleRemove}
-            className="text-destructive hover:bg-destructive/10 hover:text-destructive flex-1 min-w-[100px]"
-          >
-            <Trash2 className="w-4 h-4 mr-2" /> Remove
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 interface Setting {
   id: string;
@@ -502,32 +347,39 @@ export default function Settings() {
         <TabsContent value="voice" className="mt-0">
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
             <div className="p-4 border-b border-border">
-              <h3 className="font-display font-semibold">Kiosk Voice Settings</h3>
-              <p className="text-sm text-muted-foreground mt-1">Upload custom MP3 voice clips for the Time In/Out kiosk. If no file is uploaded, the system will use the built-in text-to-speech voice.</p>
+              <h3 className="font-display font-semibold">Attendance Voice Settings</h3>
+              <p className="text-sm text-muted-foreground mt-1">Configure automatic text-to-speech announcements for the Attendance Kiosk.</p>
             </div>
             <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                <VoiceUploadCard 
-                  title="Employee Greeting" 
-                  description="Plays when an employee is found via the dial pad (e.g. 'Hello, Juan!')" 
-                  filename="greeting.mp3" 
-                />
-                <VoiceUploadCard 
-                  title="Time In Success" 
-                  description="Plays after a successful Time In is recorded" 
-                  filename="timein_success.mp3" 
-                />
-                <VoiceUploadCard 
-                  title="Time Out Success" 
-                  description="Plays after a successful Time Out is recorded" 
-                  filename="timeout_success.mp3" 
+              <div className="flex items-center justify-between border rounded-xl p-5 bg-muted/20">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-primary/10 rounded-xl text-primary">
+                    <Volume2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-base">Enable Voice Announcement</h4>
+                    <p className="text-sm text-muted-foreground mt-0.5">Automatically announce employee attendance status and time using the browser's built-in text-to-speech.</p>
+                  </div>
+                </div>
+                <Switch 
+                  checked={settings.find(s => s.key === 'enable_voice_announcement')?.value === 'true'}
+                  onCheckedChange={(checked) => {
+                    const setting = settings.find(s => s.key === 'enable_voice_announcement');
+                    if (setting) {
+                      setSettings(prev => prev.map(p => p.id === setting.id ? { ...p, value: checked.toString() } : p));
+                      updateSetting(setting.id, checked.toString());
+                    } else {
+                      // If it doesn't exist yet, it means the migration hasn't been run or fetched.
+                      toast.error("Voice setting not found in database.");
+                    }
+                  }}
                 />
               </div>
 
               <div className="mt-8 bg-blue-50 dark:bg-blue-950/20 text-blue-800 dark:text-blue-300 p-4 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-900/50">
                 <Info className="w-5 h-5 shrink-0 mt-0.5" />
                 <div className="text-sm leading-relaxed">
-                  <strong>ℹ️ Tips:</strong> Keep clips 1–3 seconds. For greeting, record without the employee name — TTS will handle the name if needed. MP3 format only.
+                  <strong>ℹ️ How it works:</strong> The system uses your device's built-in text-to-speech capabilities. It will automatically prioritize high-quality English voices like Google US English, Microsoft David, Aria, or Jenny when available. No MP3 uploads are required!
                 </div>
               </div>
             </div>
