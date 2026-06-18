@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import Employees from "./pages/Employees";
 import Attendance from "./pages/Attendance";
 import Payroll from "./pages/Payroll";
+import Payslips from "./pages/Payslips";
 import Leaves from "./pages/Leaves";
 import Loans from "./pages/Loans";
 import Reports from "./pages/Reports";
@@ -54,6 +55,7 @@ const App = () => (
               <Route path="/employees" element={<Employees />} />
               <Route path="/attendance" element={<Attendance />} />
               <Route path="/payroll" element={<Payroll />} />
+              <Route path="/payslips" element={<Payslips />} />
               <Route path="/leaves" element={<Leaves />} />
               <Route path="/loans" element={<Loans />} />
               <Route path="/reports" element={<Reports />} />
