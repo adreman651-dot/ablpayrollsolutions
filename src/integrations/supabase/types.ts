@@ -22,13 +22,22 @@ export type Database = {
           id: string
           late_minutes: number | null
           latitude: number | null
+          latitude_in: number | null
+          latitude_out: number | null
+          location_label_in: string | null
+          location_label_out: string | null
           longitude: number | null
+          longitude_in: number | null
+          longitude_out: number | null
           notes: string | null
           overtime_minutes: number | null
+          photo_in_url: string | null
+          photo_out_url: string | null
           selfie_url: string | null
           status: string | null
           time_in: string | null
           time_out: string | null
+          total_hours: number | null
           total_hours_worked: number | null
           undertime_minutes: number | null
         }
@@ -39,13 +48,22 @@ export type Database = {
           id?: string
           late_minutes?: number | null
           latitude?: number | null
+          latitude_in?: number | null
+          latitude_out?: number | null
+          location_label_in?: string | null
+          location_label_out?: string | null
           longitude?: number | null
+          longitude_in?: number | null
+          longitude_out?: number | null
           notes?: string | null
           overtime_minutes?: number | null
+          photo_in_url?: string | null
+          photo_out_url?: string | null
           selfie_url?: string | null
           status?: string | null
           time_in?: string | null
           time_out?: string | null
+          total_hours?: number | null
           total_hours_worked?: number | null
           undertime_minutes?: number | null
         }
@@ -56,13 +74,22 @@ export type Database = {
           id?: string
           late_minutes?: number | null
           latitude?: number | null
+          latitude_in?: number | null
+          latitude_out?: number | null
+          location_label_in?: string | null
+          location_label_out?: string | null
           longitude?: number | null
+          longitude_in?: number | null
+          longitude_out?: number | null
           notes?: string | null
           overtime_minutes?: number | null
+          photo_in_url?: string | null
+          photo_out_url?: string | null
           selfie_url?: string | null
           status?: string | null
           time_in?: string | null
           time_out?: string | null
+          total_hours?: number | null
           total_hours_worked?: number | null
           undertime_minutes?: number | null
         }
@@ -567,6 +594,19 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_hr: { Args: never; Returns: boolean }
       is_payroll_officer: { Args: never; Returns: boolean }
+      kiosk_get_today_attendance: {
+        Args: { _employee_id: string }
+        Returns: Json
+      }
+      kiosk_lookup_by_code: {
+        Args: { _typed: string }
+        Returns: {
+          employee_code: string
+          first_name: string
+          id: string
+          last_name: string
+        }[]
+      }
       kiosk_lookup_employee: {
         Args: { _code: string }
         Returns: {
@@ -583,6 +623,17 @@ export type Database = {
           _longitude: number
           _mode: string
           _selfie: string
+        }
+        Returns: Json
+      }
+      kiosk_punch_v2: {
+        Args: {
+          _address?: string
+          _employee_id: string
+          _latitude?: number
+          _longitude?: number
+          _mode: string
+          _photo_url?: string
         }
         Returns: Json
       }
