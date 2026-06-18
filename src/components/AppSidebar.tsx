@@ -2,7 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Users, Clock, DollarSign, CalendarDays,
-  Landmark, FileText, Settings, LogOut, ChevronLeft, ChevronRight,
+  Landmark, FileText, Receipt, Settings, LogOut, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ const allNavItems = [
   { label: "Employees", icon: Users, path: "/employees", roles: ["admin", "hr", "payroll_officer"] },
   { label: "Attendance", icon: Clock, path: "/attendance", roles: ["admin", "hr", "payroll_officer", "employee"] },
   { label: "Payroll", icon: DollarSign, path: "/payroll", roles: ["admin", "payroll_officer"] },
+  { label: "Payslips", icon: Receipt, path: "/payslips", roles: ["admin", "hr", "payroll_officer", "employee"] },
   { label: "Leaves", icon: CalendarDays, path: "/leaves", roles: ["admin", "hr", "employee"] },
   { label: "Loans", icon: Landmark, path: "/loans", roles: ["admin", "payroll_officer", "employee"] },
   { label: "Reports", icon: FileText, path: "/reports", roles: ["admin", "hr", "payroll_officer"] },
