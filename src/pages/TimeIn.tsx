@@ -394,7 +394,7 @@ export default function TimeIn() {
             _photo_url: photoUrl,
             _address: address || null,
           });
-          if (!error && data?.ok) {
+          if (!error && (data as any)?.ok) {
             // Success with fallback
             const timeStr = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
             if (selectedMode === "in") speakAnnouncement("in", employeeName, employeeCodeStr, timeStr);

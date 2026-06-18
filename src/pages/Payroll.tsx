@@ -409,7 +409,7 @@ export default function Payroll() {
         location: att.avg_location || "",
       };
     });
-    exportPayrollExcel(rows, `payroll_${viewingRun.period_start}_to_${viewingRun.period_end}.xlsx`);
+    exportPayrollExcel(rows as any, `payroll_${viewingRun.period_start}_to_${viewingRun.period_end}.xlsx`);
     toast.success("Excel exported");
   };
 

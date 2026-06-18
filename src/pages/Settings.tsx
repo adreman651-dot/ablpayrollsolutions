@@ -117,7 +117,7 @@ export default function Settings() {
       const backupData: Record<string, any[]> = {};
       
       for (const table of tables) {
-        const { data, error } = await supabase.from(table).select("*");
+        const { data, error } = await supabase.from(table as any).select("*");
         if (error) throw error;
         backupData[table] = data || [];
       }
@@ -155,7 +155,7 @@ export default function Settings() {
       // 3. Clear existing transactional data first to avoid FK constraints
       const clearTables = ["loan_payments", "loans", "payroll_items", "payroll_runs", "leaves", "attendance", "employees"];
       for (const table of clearTables) {
-         await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000"); // Hack to delete all
+         await supabase.from(table as any).delete().neq("id", "00000000-0000-0000-0000-000000000000"); // Hack to delete all
       }
       
       // Note: Full restore via client-side inserts is complex due to FKs and IDs. 
@@ -166,7 +166,7 @@ export default function Settings() {
       for (const table of insertTables) {
         if (backupData[table] && backupData[table].length > 0) {
            // UPSERT to handle existing
-           const { error } = await supabase.from(table).upsert(backupData[table]);
+           const { error } = await supabase.from(table as any).upsert(backupData[table]);
            if (error) console.error(`Restore error for ${table}:`, error);
         }
       }
@@ -190,7 +190,7 @@ export default function Settings() {
     try {
       const tables = ["loan_payments", "loans", "payroll_items", "payroll_runs", "leaves", "attendance", "employees"];
       for (const table of tables) {
-         const { error } = await supabase.from(table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
+         const { error } = await supabase.from(table as any).delete().neq("id", "00000000-0000-0000-0000-000000000000");
          if (error) throw error;
       }
       toast.success("All transactional records and employees have been deleted.");
