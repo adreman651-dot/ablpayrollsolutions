@@ -43,7 +43,7 @@ export default function Attendance() {
     let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code)").eq("date", dateFilter).order("time_in", { ascending: false });
     const { data, error } = await query;
     if (error) toast.error(error.message);
-    else setRecords(data || []);
+    else setRecords((data || []) as any);
     setLoading(false);
   };
 
