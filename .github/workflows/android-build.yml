@@ -26,8 +26,6 @@ jobs:
           java-version: '21'
 
       # ── 3. Use pre-installed Android SDK on ubuntu-22.04 ─────────────────────
-      #   ubuntu-22.04 ships with Android SDK 34 + build-tools 34.0.0
-      #   ANDROID_HOME is already set to /usr/local/lib/android/sdk
       - name: Verify Android SDK
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
@@ -47,7 +45,7 @@ jobs:
       # ── 5. Install JS deps ────────────────────────────────────────────────────
       - name: Install npm dependencies
         working-directory: abl-employee-app
-        run: npm install
+        run: npm ci
 
       # ── 6. Write .env ─────────────────────────────────────────────────────────
       - name: Write .env
@@ -87,11 +85,11 @@ jobs:
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
-      # ── 12. Upload APK ────────────────────────────────────────────────────────
+      # ── 12. Upload APK artifact ───────────────────────────────────────────────
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ABL-Payroll-Solutions-V1.0-Debug-APK
+          name: ABL-Employee-Attendance-V2.0-Offline-Debug-APK
           path: abl-employee-app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -101,13 +99,19 @@ jobs:
         run: |
           APK="abl-employee-app/android/app/build/outputs/apk/debug/app-debug.apk"
           SIZE=$(du -sh "$APK" | cut -f1)
-          echo "## ✅ APK Build SUCCESS" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ ABL Employee Attendance App — Offline APK Build SUCCESS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| App | ABL Payroll Solutions V1.0 |" >> $GITHUB_STEP_SUMMARY
+          echo "| App | ABL Employee Attendance V2.0 (Offline-First) |" >> $GITHUB_STEP_SUMMARY
           echo "| Package | com.ablpayroll.employee |" >> $GITHUB_STEP_SUMMARY
+          echo "| Mode | Offline-First + Supabase Sync |" >> $GITHUB_STEP_SUMMARY
           echo "| File | app-debug.apk |" >> $GITHUB_STEP_SUMMARY
           echo "| Size | $SIZE |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Download the APK from the Artifacts section of this run.**" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 APK Install Location" >> $GITHUB_STEP_SUMMARY
+          echo "Download from the **Artifacts** section above: \`ABL-Employee-Attendance-V2.0-Offline-Debug-APK\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Source Path:** \`abl-employee-app/android/app/build/outputs/apk/debug/app-debug.apk\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Features:** Offline SQLite ● TIME IN/OUT ● BREAK IN/OUT ● Sync Center ● Admin System Integration" >> $GITHUB_STEP_SUMMARY
