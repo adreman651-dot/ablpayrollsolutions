@@ -4,7 +4,7 @@ import { Users, Clock, AlertTriangle, UserX, Landmark, DollarSign, TrendingDown,
 import { formatCurrency } from "@/lib/payroll-utils";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Defs as _Defs,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 
 interface DashboardStats {
