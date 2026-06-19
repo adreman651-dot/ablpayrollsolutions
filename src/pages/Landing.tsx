@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { BeamsBackground } from "@/components/ui/beams-background";
+import { Settings } from "lucide-react";
 
 export default function Landing() {
   const navigate = useNavigate();
   const [now, setNow] = useState(new Date());
   const [companyName, setCompanyName] = useState("ABL PAYROLL SOLUTIONS");
 
-  // Live clock
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
+    // 60fps for smooth clock
+    let animationFrameId: number;
+    const animate = () => {
+      setNow(new Date());
+      animationFrameId = requestAnimationFrame(animate);
+    };
+    animationFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrameId);
   }, []);
 
   // Fetch company name from settings
@@ -24,253 +29,140 @@ export default function Landing() {
   const dateStr = now.toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
   return (
-    <BeamsBackground className="landing-root">
-      <div className="landing-content">
-        {/* Branding */}
-        <div className="landing-brand">
-          <div className="landing-logo">
-            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-              <rect width="64" height="64" rx="16" fill="url(#logoGrad)" />
-              <path d="M20 44V20h14a8 8 0 0 1 0 16H20m0 0h16a8 8 0 0 1 0 16H20" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-              <defs>
-                <linearGradient id="logoGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-                  <stop stopColor="#6366f1" />
-                  <stop offset="1" stopColor="#0ea5e9" />
-                </linearGradient>
-              </defs>
-            </svg>
+    <div className="min-h-[100dvh] w-full flex items-center justify-center overflow-hidden bg-gradient-to-b from-[#050d1a] to-[#0a1628] font-sans relative selection:bg-indigo-500/30">
+      {/* Ambient Orbs */}
+      <div className="absolute top-[-10%] left-[-10%] w-[60%] aspect-square rounded-full bg-emerald-500/10 blur-[100px] pointer-events-none" />
+      <div className="absolute top-[-10%] right-[-10%] w-[60%] aspect-square rounded-full bg-purple-500/10 blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[60%] aspect-square rounded-full bg-rose-500/10 blur-[100px] pointer-events-none" />
+
+      {/* Main Container - Mobile First Max Width 420px */}
+      <div className="relative z-10 w-full max-w-[420px] px-6 py-10 flex flex-col items-center justify-between min-h-[100dvh]">
+        
+        {/* Header */}
+        <div className="flex flex-col items-center gap-5 w-full pt-2">
+          <div className="w-16 h-16 rounded-[1.25rem] bg-gradient-to-br from-indigo-500 to-purple-600 shadow-xl shadow-purple-900/20 flex items-center justify-center border border-white/10">
+            <span className="text-3xl font-bold text-white tracking-tight">A</span>
           </div>
-          <h1 className="landing-company">{companyName}</h1>
-          <p className="landing-subtitle">Attendance & Payroll Management System</p>
+          <div className="text-center">
+            <h1 className="text-[1.15rem] font-black text-white tracking-widest uppercase drop-shadow-md">{companyName}</h1>
+            <p className="text-[0.65rem] font-bold text-indigo-300 tracking-[0.25em] mt-1.5 uppercase">Payroll & Attendance</p>
+          </div>
         </div>
 
-        {/* Clock */}
-        <div className="landing-clock">
-          <div className="landing-time">{timeStr}</div>
-          <div className="landing-date">{dateStr}</div>
+        {/* Digital Clock Card */}
+        <div className="w-full relative mt-10 mb-8 group">
+          <div className="absolute inset-0 bg-white/[0.02] rounded-3xl border border-white/10 backdrop-blur-md overflow-hidden">
+            {/* Subtle grid texture */}
+            <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '16px 16px' }} />
+          </div>
+          <div className="relative px-4 py-8 flex flex-col items-center justify-center text-center">
+            <div className="text-[2.75rem] font-black text-white tracking-tight tabular-nums drop-shadow-lg leading-none">
+              {timeStr}
+            </div>
+            <div className="text-xs font-semibold text-slate-400 mt-3 uppercase tracking-[0.15em]">
+              {dateStr}
+            </div>
+          </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="landing-actions">
+        <div className="w-full flex flex-col gap-4 flex-1 justify-center">
           {/* TIME IN */}
           <button
-            id="btn-time-in"
-            className="landing-card card-timein"
             onClick={() => navigate("/time-in")}
+            className="group relative w-full rounded-[2rem] border border-emerald-500/30 bg-black/40 p-4 overflow-hidden active:scale-[0.98] transition-all duration-300 hover:bg-emerald-500/[0.05] hover:border-emerald-500/50 hover:shadow-[0_0_40px_rgba(16,185,129,0.15)] flex items-center text-left"
           >
-            <div className="card-icon-wrap timein-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
+            <AnalogClock time={now} color="emerald" />
+            <div className="ml-5 flex-1 flex flex-col justify-center py-1">
+              <h2 className="text-[1.35rem] font-black text-emerald-400 tracking-wider leading-none">TIME IN</h2>
+              <p className="text-[0.7rem] font-semibold text-slate-400 uppercase tracking-widest mt-1.5">Start your shift</p>
+              
+              <div className="mt-4 flex items-center gap-2.5">
+                <div className="h-1 flex-1 bg-white/[0.06] rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-emerald-600/0 to-emerald-400 w-1/3 group-hover:w-full transition-all duration-500 ease-out" />
+                </div>
+                <span className="text-[0.65rem] font-bold text-emerald-500/80 uppercase tracking-wider whitespace-nowrap">Tap to check in →</span>
+              </div>
             </div>
-            <div className="card-label">TIME IN</div>
-            <div className="card-desc">Employee Attendance Check-In</div>
-            <div className="card-arrow">→</div>
           </button>
 
           {/* TIME OUT */}
           <button
-            id="btn-time-out"
-            className="landing-card card-timeout"
             onClick={() => navigate("/time-out")}
+            className="group relative w-full rounded-[2rem] border border-rose-500/30 bg-black/40 p-4 overflow-hidden active:scale-[0.98] transition-all duration-300 hover:bg-rose-500/[0.05] hover:border-rose-500/50 hover:shadow-[0_0_40px_rgba(225,29,72,0.15)] flex items-center text-left"
           >
-            <div className="card-icon-wrap timeout-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 8 14" />
-              </svg>
+            <AnalogClock time={now} color="rose" />
+            <div className="ml-5 flex-1 flex flex-col justify-center py-1">
+              <h2 className="text-[1.35rem] font-black text-rose-400 tracking-wider leading-none">TIME OUT</h2>
+              <p className="text-[0.7rem] font-semibold text-slate-400 uppercase tracking-widest mt-1.5">End your shift</p>
+              
+              <div className="mt-4 flex items-center gap-2.5">
+                <div className="h-1 flex-1 bg-white/[0.06] rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-rose-600/0 to-rose-400 w-1/3 group-hover:w-full transition-all duration-500 ease-out" />
+                </div>
+                <span className="text-[0.65rem] font-bold text-rose-500/80 uppercase tracking-wider whitespace-nowrap">Tap to check out →</span>
+              </div>
             </div>
-            <div className="card-label">TIME OUT</div>
-            <div className="card-desc">Employee Attendance Check-Out</div>
-            <div className="card-arrow">→</div>
-          </button>
-
-          {/* ADMIN */}
-          <button
-            id="btn-admin"
-            className="landing-card card-admin"
-            onClick={() => navigate("/auth")}
-          >
-            <div className="card-icon-wrap admin-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            </div>
-            <div className="card-label">ADMIN</div>
-            <div className="card-desc">Payroll & System Administration</div>
-            <div className="card-arrow">→</div>
           </button>
         </div>
 
-        <p className="landing-footer">
-          Touch a button to continue &nbsp;·&nbsp; {companyName} &copy; {now.getFullYear()}
-        </p>
+        {/* Admin Login Bottom Pill */}
+        <div className="mt-8 pt-4 w-full flex justify-center pb-2">
+          <button 
+            onClick={() => navigate("/auth")}
+            className="group flex items-center gap-3 px-4 py-2.5 rounded-full bg-white/[0.02] border border-white/[0.04] hover:bg-purple-500/[0.08] hover:border-purple-500/30 transition-all active:scale-95"
+          >
+            <div className="w-6 h-6 rounded-[0.4rem] bg-purple-500/20 flex items-center justify-center group-hover:bg-purple-500/30 transition-colors">
+              <Settings className="w-3.5 h-3.5 text-purple-400" />
+            </div>
+            <span className="text-[0.65rem] font-bold text-slate-500 group-hover:text-purple-300 uppercase tracking-[0.15em] transition-colors">Admin</span>
+          </button>
+        </div>
+        
       </div>
-
-      <style>{`
-        .landing-root {
-          min-height: 100vh;
-          background: #0f172a;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          overflow: hidden;
-          font-family: 'Inter', sans-serif;
-        }
-        .landing-blob {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(80px);
-          opacity: 0.18;
-          animation: blobPulse 8s ease-in-out infinite alternate;
-        }
-        .blob-1 { width: 520px; height: 520px; background: #6366f1; top: -120px; left: -140px; animation-delay: 0s; }
-        .blob-2 { width: 420px; height: 420px; background: #0ea5e9; bottom: -100px; right: -100px; animation-delay: 3s; }
-        .blob-3 { width: 300px; height: 300px; background: #10b981; top: 50%; left: 50%; transform: translate(-50%,-50%); animation-delay: 6s; }
-        @keyframes blobPulse { from { transform: scale(1) translate(0,0); } to { transform: scale(1.1) translate(10px, -10px); } }
-        .blob-3 { animation-name: blobPulse3; }
-        @keyframes blobPulse3 { from { transform: translate(-50%,-50%) scale(1); } to { transform: translate(-50%,-50%) scale(1.12); } }
-
-        .landing-content {
-          position: relative;
-          z-index: 10;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 2rem;
-          padding: 2rem 1.5rem;
-          width: 100%;
-          max-width: 900px;
-        }
-        .landing-brand { text-align: center; }
-        .landing-logo {
-          width: 72px; height: 72px;
-          margin: 0 auto 1rem;
-          border-radius: 20px;
-          box-shadow: 0 0 40px rgba(99,102,241,0.5);
-          animation: logoGlow 3s ease-in-out infinite alternate;
-        }
-        @keyframes logoGlow { from { box-shadow: 0 0 30px rgba(99,102,241,0.4); } to { box-shadow: 0 0 60px rgba(99,102,241,0.75); } }
-        .landing-company {
-          font-size: clamp(1.4rem, 4vw, 2.2rem);
-          font-weight: 800;
-          color: #fff;
-          letter-spacing: -0.02em;
-          margin: 0;
-        }
-        .landing-subtitle {
-          font-size: 0.9rem;
-          color: #94a3b8;
-          margin: 0.25rem 0 0;
-          letter-spacing: 0.04em;
-        }
-
-        .landing-clock {
-          text-align: center;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 20px;
-          padding: 1rem 2.5rem;
-          backdrop-filter: blur(12px);
-        }
-        .landing-time {
-          font-size: clamp(2rem, 8vw, 3.8rem);
-          font-weight: 700;
-          color: #fff;
-          letter-spacing: 0.04em;
-          line-height: 1.1;
-          font-variant-numeric: tabular-nums;
-        }
-        .landing-date {
-          font-size: 0.9rem;
-          color: #94a3b8;
-          margin-top: 0.25rem;
-        }
-
-        .landing-actions {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 1.25rem;
-          width: 100%;
-        }
-        @media (max-width: 640px) {
-          .landing-actions { grid-template-columns: 1fr; }
-        }
-
-        .landing-card {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 0.6rem;
-          padding: 2rem 1.25rem 1.5rem;
-          border-radius: 24px;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(255,255,255,0.04);
-          backdrop-filter: blur(16px);
-          cursor: pointer;
-          transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-          text-align: center;
-          overflow: hidden;
-        }
-        .landing-card::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: 24px;
-          opacity: 0;
-          transition: opacity 0.2s;
-        }
-        .landing-card:hover { transform: translateY(-6px); }
-        .landing-card:active { transform: translateY(-2px) scale(0.98); }
-
-        .card-timein:hover { border-color: rgba(16,185,129,0.5); box-shadow: 0 20px 60px rgba(16,185,129,0.2); background: rgba(16,185,129,0.06); }
-        .card-timeout:hover { border-color: rgba(239,68,68,0.5); box-shadow: 0 20px 60px rgba(239,68,68,0.2); background: rgba(239,68,68,0.06); }
-        .card-admin:hover  { border-color: rgba(99,102,241,0.5); box-shadow: 0 20px 60px rgba(99,102,241,0.2); background: rgba(99,102,241,0.06); }
-
-        .card-icon-wrap {
-          width: 72px; height: 72px;
-          border-radius: 20px;
-          display: flex; align-items: center; justify-content: center;
-          margin-bottom: 0.25rem;
-        }
-        .timein-icon { background: rgba(16,185,129,0.15); color: #10b981; }
-        .timeout-icon { background: rgba(239,68,68,0.15); color: #ef4444; }
-        .admin-icon  { background: rgba(99,102,241,0.15); color: #818cf8; }
-
-        .card-label {
-          font-size: 1.35rem;
-          font-weight: 800;
-          color: #fff;
-          letter-spacing: 0.06em;
-        }
-        .card-timein .card-label { color: #10b981; }
-        .card-timeout .card-label { color: #ef4444; }
-        .card-admin .card-label  { color: #818cf8; }
-
-        .card-desc {
-          font-size: 0.8rem;
-          color: #94a3b8;
-          line-height: 1.4;
-        }
-        .card-arrow {
-          font-size: 1.2rem;
-          color: #475569;
-          margin-top: 0.5rem;
-          transition: transform 0.2s, color 0.2s;
-        }
-        .landing-card:hover .card-arrow { transform: translateX(4px); color: #94a3b8; }
-
-        .landing-footer {
-          font-size: 0.75rem;
-          color: #475569;
-          text-align: center;
-        }
-      `}</style>
-    </BeamsBackground>
+    </div>
   );
+}
+
+function AnalogClock({ time, color }: { time: Date, color: "emerald" | "rose" }) {
+  const hours = time.getHours();
+  const minutes = time.getMinutes();
+  const seconds = time.getSeconds();
+  const ms = time.getMilliseconds();
+  
+  const secDeg = (seconds + ms / 1000) * 6;
+  const minDeg = (minutes + seconds / 60) * 6;
+  const hrDeg = (hours % 12 + minutes / 60) * 30;
+
+  const isGreen = color === "emerald";
+  const glowColor = isGreen ? "rgba(16, 185, 129, 0.25)" : "rgba(225, 29, 72, 0.25)";
+  const borderColor = isGreen ? "#10b981" : "#e11d48";
+  
+  return (
+    <div className="relative w-24 h-24 rounded-full bg-black/60 border border-white/10 shadow-[inset_0_4px_10px_rgba(0,0,0,0.5)] overflow-hidden flex items-center justify-center shrink-0">
+      {/* Outer glow ring conic gradient */}
+      <div 
+        className="absolute inset-0 rounded-full opacity-50 transition-all duration-75"
+        style={{
+          background: `conic-gradient(from ${secDeg}deg, transparent 0deg, transparent 270deg, ${borderColor} 360deg)`
+        }}
+      />
+      
+      {/* Inner dial */}
+      <div className="absolute inset-[3px] rounded-full bg-gradient-to-br from-[#1a2333] to-[#0a101a] border border-white/5 shadow-inner" style={{ boxShadow: `inset 0 0 20px ${glowColor}` }}>
+        {/* Ticks */}
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div key={i} className="absolute w-[1.5px] h-2 bg-white/20 rounded-full" style={{
+            top: 3, left: "calc(50% - 0.75px)", transformOrigin: "0.75px 42px", transform: `rotate(${i * 30}deg)`
+          }} />
+        ))}
+        {/* Hands */}
+        <div className="absolute left-1/2 bottom-1/2 w-[3px] h-6 bg-white rounded-full origin-bottom -translate-x-1/2 drop-shadow-md" style={{ transform: `rotate(${hrDeg}deg)` }} />
+        <div className="absolute left-1/2 bottom-1/2 w-0.5 h-9 bg-white/80 rounded-full origin-bottom -translate-x-1/2 drop-shadow-md" style={{ transform: `rotate(${minDeg}deg)` }} />
+        <div className="absolute left-1/2 bottom-1/2 w-[1.5px] h-10 rounded-full origin-bottom -translate-x-1/2" style={{ backgroundColor: borderColor, transform: `rotate(${secDeg}deg)` }} />
+        {/* Center dot */}
+        <div className="absolute top-1/2 left-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/20" style={{ backgroundColor: borderColor, boxShadow: `0 0 8px ${borderColor}` }} />
+      </div>
+    </div>
+  )
 }
