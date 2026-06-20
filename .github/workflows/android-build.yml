@@ -25,14 +25,13 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # ── 3. Use pre-installed Android SDK on ubuntu-22.04 ─────────────────────
-      - name: Verify Android SDK
+      # ── 3. Install SDK 36 ───────────────────────────────────────────────────
+      #   ubuntu-22.04 ships with Android SDK 34. We need 36.
+      - name: Install Android SDK 36
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          ls $ANDROID_HOME/platforms/ || true
-          ls $ANDROID_HOME/build-tools/ || true
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
 
       # ── 4. Node 22 ────────────────────────────────────────────────────────────
       - name: Set up Node.js 22
