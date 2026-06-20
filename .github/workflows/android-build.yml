@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-android:
-    name: Build Debug APK
+    name: Build Release APK
     runs-on: ubuntu-22.04
 
     steps:
@@ -77,10 +77,10 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x abl-employee-app/android/gradlew
 
-      # ── 11. Build Debug APK ───────────────────────────────────────────────────
-      - name: Gradle assembleDebug
+      # ── 11. Build Release APK ─────────────────────────────────────────────────
+      - name: Gradle assembleRelease
         working-directory: abl-employee-app/android
-        run: ./gradlew assembleDebug --no-daemon --warning-mode=all
+        run: ./gradlew assembleRelease --no-daemon --warning-mode=all
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
@@ -88,15 +88,15 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ABL-Employee-Attendance-V2.0-Offline-Debug-APK
-          path: abl-employee-app/android/app/build/outputs/apk/debug/app-debug.apk
+          name: ABL-Employee-Attendance-V2.0-Offline-Release-APK
+          path: abl-employee-app/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
 
       # ── 13. Summary ───────────────────────────────────────────────────────────
       - name: Build summary
         run: |
-          APK="abl-employee-app/android/app/build/outputs/apk/debug/app-debug.apk"
+          APK="abl-employee-app/android/app/build/outputs/apk/release/app-release.apk"
           SIZE=$(du -sh "$APK" | cut -f1)
           echo "## ✅ ABL Employee Attendance App — Offline APK Build SUCCESS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -105,12 +105,12 @@ jobs:
           echo "| App | ABL Employee Attendance V2.0 (Offline-First) |" >> $GITHUB_STEP_SUMMARY
           echo "| Package | com.ablpayroll.employee |" >> $GITHUB_STEP_SUMMARY
           echo "| Mode | Offline-First + Supabase Sync |" >> $GITHUB_STEP_SUMMARY
-          echo "| File | app-debug.apk |" >> $GITHUB_STEP_SUMMARY
+          echo "| File | app-release.apk |" >> $GITHUB_STEP_SUMMARY
           echo "| Size | $SIZE |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📥 APK Install Location" >> $GITHUB_STEP_SUMMARY
-          echo "Download from the **Artifacts** section above: \`ABL-Employee-Attendance-V2.0-Offline-Debug-APK\`" >> $GITHUB_STEP_SUMMARY
+          echo "Download from the **Artifacts** section above: \`ABL-Employee-Attendance-V2.0-Offline-Release-APK\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Source Path:** \`abl-employee-app/android/app/build/outputs/apk/debug/app-debug.apk\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Source Path:** \`abl-employee-app/android/app/build/outputs/apk/release/app-release.apk\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Features:** Offline SQLite ● TIME IN/OUT ● BREAK IN/OUT ● Sync Center ● Admin System Integration" >> $GITHUB_STEP_SUMMARY
