@@ -375,10 +375,14 @@ function Login({ onBack, onSuccess }: { onBack: () => void, onSuccess: () => voi
     e.preventDefault();
     setLoading(true);
     setError('');
-    const authEmail = email.includes('@') ? email : `${email.toLowerCase()}@ablpayroll.local`;
-    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password });
-    if (error) setError(error.message);
-    else onSuccess();
+    
+    // Offline Hardcoded Admin Access
+    if (email.toLowerCase() === 'admin' && password === '1111') {
+      onSuccess();
+    } else {
+      setError('Invalid admin credentials.');
+    }
+    
     setLoading(false);
   };
 
