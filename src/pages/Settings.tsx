@@ -239,7 +239,7 @@ export default function Settings() {
                 {loading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
                 ) : settings
-                    .filter(s => !['philhealth_rate', 'pagibig_employee', 'pagibig_employer', 'sss_employer_rate', 'sss_employee_rate', 'phic_rate', 'hdmf_employee', 'hdmf_employer', 'enable_voice_announcement'].includes(s.key))
+                    .filter(s => !['philhealth_rate', 'pagibig_employee', 'pagibig_employer', 'sss_employer_rate', 'sss_employer_share', 'sss_employee_rate', 'phic_rate', 'hdmf_employee', 'hdmf_employer', 'enable_voice_announcement', 'auto_sync_enabled'].includes(s.key))
                     .map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-sm">{s.key}</TableCell>
