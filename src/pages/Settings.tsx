@@ -264,6 +264,7 @@ export default function Settings() {
           <TabsTrigger value="roles">User Roles</TabsTrigger>
           <TabsTrigger value="tax">Withholding Tax</TabsTrigger>
           <TabsTrigger value="voice">Voice Settings</TabsTrigger>
+          <TabsTrigger value="sync">Sync</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
         </TabsList>
 
