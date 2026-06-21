@@ -199,6 +199,27 @@ export default function TimeIn() {
     };
   }, [enableFaceGate, cameraReady, faceApiLoaded, phase]);
 
+  // ─── Live TTS greeting while typing the employee code ────────────────────
+  const lastSpokenCodeRef = useRef<string>("");
+  useEffect(() => {
+    if (!code || code.length < 3 || enableFaceGate || phase !== "active") return;
+    if (lastSpokenCodeRef.current === code) return;
+    const handle = setTimeout(async () => {
+      const padded = "ABL-" + code.padStart(5, "0");
+      const { data } = await supabase.rpc("kiosk_lookup_by_code", { _typed: code });
+      if (!data || data.length === 0) return;
+      const match = data.find((d: any) => d.employee_code === padded) || (data.length === 1 ? data[0] : null);
+      if (!match) return;
+      lastSpokenCodeRef.current = code;
+      const firstName = (match.first_name || "").split(" ")[0].trim();
+      if (!firstName) return;
+      const { playVoice } = await import("@/lib/voiceService");
+      const action = mode === "out" ? "ready to time out" : "ready to time in";
+      playVoice(`Hello ${firstName}, ${action}.`, undefined, "voice_welcome_enabled");
+    }, 450);
+    return () => clearTimeout(handle);
+  }, [code, mode, enableFaceGate, phase]);
+
   // ─── Voice helper ────────────────────────────────────────────────────────
   const speakAnnouncement = async (type: "greeting" | "in" | "out" | "error" | "complete", empName: string, empCodeStr: string, timeStr?: string) => {
     // Extract FIRST name only (first word of employee's first_name or full display name)
@@ -275,7 +296,7 @@ export default function TimeIn() {
     const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employee.id });
     
     // Check if employee already timed in AND timed out today
-    if (attData && attData.time_in && attData.time_out) {
+    if (attData && (attData as any).time_in && (attData as any).time_out) {
       speakAnnouncement("complete", fullName, padded);
       toast.error("Attendance already completed for today.");
       triggerShake();

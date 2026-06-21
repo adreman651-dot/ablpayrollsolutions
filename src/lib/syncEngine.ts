@@ -37,12 +37,12 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
     const pendingAttendance = await offlineQuery("SELECT * FROM attendance WHERE sync_status = 'pending'");
     for (const record of pendingAttendance) {
       // Check if it already exists on Supabase
-      const { data: existing } = await supabase.from('attendance').select('id, updated_at').eq('id', record.id).maybeSingle();
+      const { data: existing } = await supabase.from('attendance').select('id, updated_at' as any).eq('id', record.id).maybeSingle();
       
       let shouldUpload = true;
       if (existing) {
         const localUpdated = new Date(record.updated_at || record.created_at).getTime();
-        const remoteUpdated = new Date(existing.updated_at).getTime();
+        const remoteUpdated = new Date((existing as any).updated_at).getTime();
         if (remoteUpdated >= localUpdated) {
           shouldUpload = false;
           // Remote wins, mark as synced and overwrite local later
@@ -66,8 +66,9 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
     // 2. Dual-Sync (Download & Conflict Resolve) for other tables
     for (const table of tables) {
       // Fetch latest from Supabase
-      const { data: remoteRecords, error: remoteErr } = await supabase.from(table as any).select('*');
+      const { data: remoteRecordsRaw, error: remoteErr } = await supabase.from(table as any).select('*');
       if (remoteErr) throw remoteErr;
+      const remoteRecords = (remoteRecordsRaw || []) as any[];
       
       // Fetch local records
       const localRecords = await offlineQuery(`SELECT * FROM ${table}`);
@@ -93,7 +94,7 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
             totalDownloaded++;
           } else if (localUpdated > remoteUpdated) {
             // Local is newer -> Upload to Supabase
-            const { error: upsertErr } = await supabase.from(table as any).upsert(remote);
+            const { error: upsertErr } = await supabase.from(table as any).upsert(remote as any);
             if (!upsertErr) {
               conflictCount++;
               await logConflict(table, remote.id, 'local_wins', `Local updated_at: ${local.updated_at}, Remote updated_at: ${remote.updated_at}`);
@@ -104,7 +105,7 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
       }
 
       // Check for local records that don't exist on remote yet (e.g. created offline)
-      const remoteIds = new Set(remoteRecords.map(r => r.id));
+      const remoteIds = new Set(remoteRecords.map((r: any) => r.id));
       for (const local of localRecords) {
         if (!remoteIds.has(local.id)) {
           // Upload to Supabase

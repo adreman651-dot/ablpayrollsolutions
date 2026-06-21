@@ -83,7 +83,7 @@ export async function playVoice(
 
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.rate = settings.voice_rate;
-    utterance.pitch = settings.pitch || settings.voice_pitch;
+    utterance.pitch = settings.voice_pitch;
     utterance.volume = settings.voice_volume / 100;
 
     // Retrieve voices

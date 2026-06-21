@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle, Info, Volume2 } from "lucide-react";
+import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle, Info, Volume2, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { syncAllData } from "@/lib/syncEngine";
 
 
 
@@ -54,6 +55,54 @@ export default function Settings() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-Sync state
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
+  const autoSyncSetting = settings.find(s => s.key === "auto_sync_enabled");
+  const autoSyncEnabled = autoSyncSetting?.value === "true";
+
+  const runSyncNow = async () => {
+    if (!isOnline) {
+      toast.error("You're offline. Connect to the internet to sync.");
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const res = await syncAllData();
+      if (res.success) {
+        toast.success(res.details || "Sync complete.");
+        setLastSyncAt(new Date().toLocaleString());
+      } else {
+        toast.error(res.details || "Sync failed.");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Sync failed.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Auto-sync every 5 minutes when toggle is on and online
+  useEffect(() => {
+    if (!autoSyncEnabled || !isOnline) return;
+    const interval = setInterval(() => { runSyncNow(); }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSyncEnabled, isOnline]);
 
   const fetchData = async () => {
     const [settingsRes, rolesRes] = await Promise.all([
@@ -215,6 +264,7 @@ export default function Settings() {
           <TabsTrigger value="roles">User Roles</TabsTrigger>
           <TabsTrigger value="tax">Withholding Tax</TabsTrigger>
           <TabsTrigger value="voice">Voice Settings</TabsTrigger>
+          <TabsTrigger value="sync">Sync</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
         </TabsList>
 
@@ -238,7 +288,7 @@ export default function Settings() {
                 {loading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
                 ) : settings
-                    .filter(s => !['philhealth_rate', 'pagibig_employee', 'pagibig_employer', 'sss_employer_rate', 'sss_employee_rate', 'phic_rate', 'hdmf_employee', 'hdmf_employer', 'enable_voice_announcement'].includes(s.key))
+                    .filter(s => !['philhealth_rate', 'pagibig_employee', 'pagibig_employer', 'sss_employer_rate', 'sss_employer_share', 'sss_employee_rate', 'phic_rate', 'hdmf_employee', 'hdmf_employer', 'enable_voice_announcement', 'auto_sync_enabled'].includes(s.key))
                     .map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-sm">{s.key}</TableCell>
@@ -501,6 +551,74 @@ export default function Settings() {
                 <div className="text-sm leading-relaxed">
                   <strong>ℹ️ Voice Assistant Priority:</strong> The system automatically tries to find and play custom uploaded MP3 files from the `voice-assets` bucket first. If none are found, it falls back to the native Text-to-Speech system tuned to your preferred rate, pitch, and voice guidelines.
                 </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ─── Maintenance ───────────────────────────────────────────── */}
+        {/* ─── Sync ─────────────────────────────────────────────────── */}
+        <TabsContent value="sync" className="mt-0">
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-semibold">Cloud Sync</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Automatically synchronize all admin module data with the cloud whenever an internet connection is detected.
+                </p>
+              </div>
+              <div className={`flex items-center gap-2 text-sm font-medium ${isOnline ? "text-emerald-500" : "text-rose-500"}`}>
+                {isOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+                {isOnline ? "Online" : "Offline"}
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between border rounded-xl p-4 bg-muted/10">
+                <div>
+                  <h4 className="font-semibold text-sm">Enable Auto-Sync</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    When ON and the device is online, all admin data (employees, attendance, payroll, leaves, loans, settings) is synced every 5 minutes.
+                  </p>
+                </div>
+                <Switch
+                  checked={autoSyncEnabled}
+                  onCheckedChange={async (checked) => {
+                    const existing = settings.find(s => s.key === "auto_sync_enabled");
+                    if (existing) {
+                      setSettings(prev => prev.map(p => p.id === existing.id ? { ...p, value: checked.toString() } : p));
+                      updateSetting(existing.id, checked.toString());
+                    } else {
+                      await supabase.from("system_settings").insert([{
+                        key: "auto_sync_enabled",
+                        value: checked.toString(),
+                        description: "Auto-sync admin data with cloud when online"
+                      }]);
+                      fetchData();
+                    }
+                    if (checked && isOnline) runSyncNow();
+                  }}
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border rounded-xl p-4 bg-muted/10">
+                <div>
+                  <h4 className="font-semibold text-sm">Manual Sync</h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {lastSyncAt ? `Last sync: ${lastSyncAt}` : "No sync run in this session yet."}
+                  </p>
+                </div>
+                <Button onClick={runSyncNow} disabled={isSyncing || !isOnline} className="gap-2">
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`} />
+                  {isSyncing ? "Syncing..." : "Sync Now"}
+                </Button>
+              </div>
+
+              <div className="bg-blue-50 dark:bg-blue-950/20 text-blue-800 dark:text-blue-300 p-4 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-900/50">
+                <Info className="w-5 h-5 shrink-0 mt-0.5" />
+                <p className="text-sm leading-relaxed">
+                  Auto-sync is optional. Toggle it OFF to sync only when you press <strong>Sync Now</strong>. Sync is automatically skipped when the device is offline.
+                </p>
               </div>
             </div>
           </div>
