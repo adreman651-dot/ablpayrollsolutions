@@ -37,12 +37,12 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
     const pendingAttendance = await offlineQuery("SELECT * FROM attendance WHERE sync_status = 'pending'");
     for (const record of pendingAttendance) {
       // Check if it already exists on Supabase
-      const { data: existing } = await supabase.from('attendance').select('id, updated_at').eq('id', record.id).maybeSingle();
+      const { data: existing } = await supabase.from('attendance').select('id, updated_at' as any).eq('id', record.id).maybeSingle();
       
       let shouldUpload = true;
       if (existing) {
         const localUpdated = new Date(record.updated_at || record.created_at).getTime();
-        const remoteUpdated = new Date(existing.updated_at).getTime();
+        const remoteUpdated = new Date((existing as any).updated_at).getTime();
         if (remoteUpdated >= localUpdated) {
           shouldUpload = false;
           // Remote wins, mark as synced and overwrite local later
