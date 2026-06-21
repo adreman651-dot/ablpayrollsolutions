@@ -56,6 +56,54 @@ export default function Settings() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-Sync state
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
+  const autoSyncSetting = settings.find(s => s.key === "auto_sync_enabled");
+  const autoSyncEnabled = autoSyncSetting?.value === "true";
+
+  const runSyncNow = async () => {
+    if (!isOnline) {
+      toast.error("You're offline. Connect to the internet to sync.");
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const res = await syncAllData();
+      if (res.success) {
+        toast.success(res.details || "Sync complete.");
+        setLastSyncAt(new Date().toLocaleString());
+      } else {
+        toast.error(res.details || "Sync failed.");
+      }
+    } catch (e: any) {
+      toast.error(e?.message || "Sync failed.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Auto-sync every 5 minutes when toggle is on and online
+  useEffect(() => {
+    if (!autoSyncEnabled || !isOnline) return;
+    const interval = setInterval(() => { runSyncNow(); }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSyncEnabled, isOnline]);
+
   const fetchData = async () => {
     const [settingsRes, rolesRes] = await Promise.all([
       supabase.from("system_settings").select("*").order("key"),
