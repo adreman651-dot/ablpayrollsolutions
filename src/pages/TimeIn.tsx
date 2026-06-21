@@ -296,7 +296,7 @@ export default function TimeIn() {
     const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employee.id });
     
     // Check if employee already timed in AND timed out today
-    if (attData && attData.time_in && attData.time_out) {
+    if (attData && (attData as any).time_in && (attData as any).time_out) {
       speakAnnouncement("complete", fullName, padded);
       toast.error("Attendance already completed for today.");
       triggerShake();
