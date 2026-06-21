@@ -200,51 +200,34 @@ export default function TimeIn() {
   }, [enableFaceGate, cameraReady, faceApiLoaded, phase]);
 
   // ─── Voice helper ────────────────────────────────────────────────────────
-  const speakAnnouncement = (type: "greeting" | "in" | "out", empName: string, empCodeStr: string, timeStr?: string) => {
-    if (!voiceEnabled || !("speechSynthesis" in window)) return;
-    
+  const speakAnnouncement = async (type: "greeting" | "in" | "out" | "error" | "complete", empName: string, empCodeStr: string, timeStr?: string) => {
+    // Extract FIRST name only (first word of employee's first_name or full display name)
+    const firstName = empName.split(" ")[0].trim();
+
+    const { playVoice } = await import("@/lib/voiceService");
+
+    if (type === "error") {
+      playVoice("Employee record not found.", "employee_not_found.mp3", "voice_error_enabled");
+      return;
+    }
+
+    if (type === "complete") {
+      playVoice("Attendance already completed for today.", "attendance_complete.mp3", "voice_error_enabled");
+      return;
+    }
+
     // Greeting rules
     const hour = new Date().getHours();
-    let greeting = "Good Morning";
+    let greeting = "Welcome";
     if (hour >= 12 && hour < 18) greeting = "Good Afternoon";
     else if (hour >= 18) greeting = "Good Evening";
 
-    let message = "";
     if (type === "greeting") {
-      message = `${greeting} ${empName}.`;
+      playVoice(`${greeting} ${firstName}.`, "welcome.mp3", "voice_welcome_enabled");
     } else if (type === "in") {
-      message = `${greeting} ${empName}. Employee Code ${empCodeStr}. Your Time In has been recorded successfully at ${timeStr}.`;
+      playVoice(`Welcome ${firstName}. Successfully timed in.`, "timed_in.mp3", "voice_time_in_enabled");
     } else if (type === "out") {
-      message = `${greeting} ${empName}. Employee Code ${empCodeStr}. Your Time Out has been recorded successfully at ${timeStr}. Thank you and have a safe trip home.`;
-    }
-
-    const u = new SpeechSynthesisUtterance(message);
-    u.lang = "en-US";
-    u.rate = 0.9;
-    u.pitch = 1.0;
-    u.volume = 1.0;
-
-    // Voice Selection Priority
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoices = ["Google US English", "Microsoft David", "Microsoft Aria", "Microsoft Jenny"];
-    let selectedVoice = null;
-    
-    for (const pref of preferredVoices) {
-      selectedVoice = voices.find(v => v.name.includes(pref));
-      if (selectedVoice) break;
-    }
-    
-    if (!selectedVoice) {
-      selectedVoice = voices.find(v => v.lang === "en-US") || voices[0];
-    }
-    
-    if (selectedVoice) u.voice = selectedVoice;
-
-    try {
-      window.speechSynthesis.speak(u);
-    } catch (e) {
-      console.error("Speech Synthesis failed", e);
-      if (type !== "greeting") toast.success("Voice service unavailable. Attendance recorded successfully.");
+      playVoice(`Thank you ${firstName}. Successfully timed out.`, "timed_out.mp3", "voice_time_out_enabled");
     }
   };
 
@@ -273,12 +256,14 @@ export default function TimeIn() {
     }
 
     if (!employee) {
+      speakAnnouncement("error", "", "");
       playErrorBeep();
       triggerShake();
       setCode("");
       setEmployeeName("");
       setEmployeeId("");
       setSubmitting(false);
+      toast.error("Invalid Employee ID.");
       return;
     }
 
@@ -288,6 +273,19 @@ export default function TimeIn() {
 
     // Check today's attendance using public RPC
     const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employee.id });
+    
+    // Check if employee already timed in AND timed out today
+    if (attData && attData.time_in && attData.time_out) {
+      speakAnnouncement("complete", fullName, padded);
+      toast.error("Attendance already completed for today.");
+      triggerShake();
+      setCode("");
+      setEmployeeName("");
+      setEmployeeId("");
+      setSubmitting(false);
+      return;
+    }
+
     // We no longer auto-set the mode. Let the user choose via the buttons.
     setMode(null);
 

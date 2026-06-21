@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Users, Clock, DollarSign, CalendarDays,
   Landmark, FileText, Receipt, Settings, LogOut, ChevronLeft, ChevronRight,
+  Database, RefreshCw, Shield, ScrollText, UserCheck
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,12 @@ const allNavItems = [
   { label: "Loans", icon: Landmark, path: "/loans", roles: ["admin", "payroll_officer", "employee"] },
   { label: "Reports", icon: FileText, path: "/reports", roles: ["admin", "hr", "payroll_officer"] },
   { label: "Settings", icon: Settings, path: "/settings", roles: ["admin", "hr"] },
+  { label: "Backup & Restore", icon: Database, path: "/backup-restore", roles: ["admin"] },
+  { label: "Sync Center", icon: RefreshCw, path: "/sync-center", roles: ["admin", "hr", "payroll_officer"] },
+  { label: "Government Contributions", icon: Landmark, path: "/government-contributions", roles: ["admin", "payroll_officer"] },
+  { label: "User Management", icon: UserCheck, path: "/user-management", roles: ["admin"] },
+  { label: "Role Permissions", icon: Shield, path: "/role-permissions", roles: ["admin"] },
+  { label: "Audit Logs", icon: ScrollText, path: "/audit-logs", roles: ["admin"] },
 ];
 
 export default function AppSidebar() {

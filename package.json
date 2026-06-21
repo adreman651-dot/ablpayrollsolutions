@@ -1,7 +1,11 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "abl-payroll-system",
+  "description": "ABL Payroll System - Complete offline-capable payroll and attendance management platform",
+  "author": "ABL Solutions",
+  "homepage": ".",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,9 +14,17 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "electron:start": "electron electron/main.cjs",
+    "electron:build": "vite build && electron-builder --win",
+    "android:build": "vite build && npx cap sync android && cd android && gradlew assembleDebug",
+    "android:release": "vite build && npx cap sync android && cd android && gradlew assembleRelease",
+    "cap:sync": "npx cap sync android"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^8.1.0",
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -43,10 +55,12 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "@supabase/supabase-js": "^2.97.0",
     "@tanstack/react-query": "^5.83.0",
+    "better-sqlite3": "*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "electron-store": "^11.0.2",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "jspdf": "^4.2.1",
@@ -69,6 +83,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.1",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
@@ -78,6 +93,8 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -89,5 +106,26 @@
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
     "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "com.ablpayroll.system",
+    "productName": "ABL Payroll System",
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "ABL-Payroll-Setup.${ext}"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ]
   }
 }

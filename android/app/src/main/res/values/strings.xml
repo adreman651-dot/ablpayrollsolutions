@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ABL Payroll System</string>
+    <string name="title_activity_main">ABL Payroll System</string>
+    <string name="package_name">com.ablpayroll.system</string>
+    <string name="custom_url_scheme">com.ablpayroll.system</string>
+</resources>

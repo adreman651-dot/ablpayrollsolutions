@@ -17,6 +17,12 @@ import Leaves from "./pages/Leaves";
 import Loans from "./pages/Loans";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import BackupRestore from "./pages/BackupRestore";
+import SyncCenter from "./pages/SyncCenter";
+import GovernmentContributions from "./pages/GovernmentContributions";
+import UserManagement from "./pages/UserManagement";
+import RolePermissions from "./pages/RolePermissions";
+import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
 import type { ReactNode } from "react";
 
@@ -60,6 +66,12 @@ const App = () => (
               <Route path="/loans" element={<Loans />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/backup-restore" element={<BackupRestore />} />
+              <Route path="/sync-center" element={<SyncCenter />} />
+              <Route path="/government-contributions" element={<GovernmentContributions />} />
+              <Route path="/user-management" element={<UserManagement />} />
+              <Route path="/role-permissions" element={<RolePermissions />} />
+              <Route path="/audit-logs" element={<AuditLogs />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

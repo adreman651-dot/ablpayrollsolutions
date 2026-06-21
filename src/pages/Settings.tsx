@@ -365,45 +365,141 @@ export default function Settings() {
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
             <div className="p-4 border-b border-border">
               <h3 className="font-display font-semibold">Attendance Voice Settings</h3>
-              <p className="text-sm text-muted-foreground mt-1">Configure automatic text-to-speech announcements for the Attendance Kiosk.</p>
+              <p className="text-sm text-muted-foreground mt-1">Configure automatic text-to-speech announcements and custom MP3 uploads for the Attendance Kiosk.</p>
             </div>
-            <div className="p-6">
-              <div className="flex items-center justify-between border rounded-xl p-5 bg-muted/20">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-primary/10 rounded-xl text-primary">
-                    <Volume2 className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-base">Enable Voice Announcement</h4>
-                    <p className="text-sm text-muted-foreground mt-0.5">Automatically announce employee attendance status and time using the browser's built-in text-to-speech.</p>
-                  </div>
+            <div className="p-6 space-y-6">
+              {/* Toggles */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[
+                  { key: "voice_enabled", label: "Enable Voice Assistant", desc: "Global toggle to enable voice output" },
+                  { key: "voice_welcome_enabled", label: "Enable Welcome Message", desc: "Greet employee during ID validation lookup" },
+                  { key: "voice_time_in_enabled", label: "Enable Time In Confirmation", desc: "Voice confirmation of successfully timing in" },
+                  { key: "voice_time_out_enabled", label: "Enable Time Out Confirmation", desc: "Voice confirmation of successfully timing out" },
+                  { key: "voice_error_enabled", label: "Enable Error Announcements", desc: "Announce 'Employee record not found' and other errors" },
+                ].map((item) => {
+                  const setting = settings.find(s => s.key === item.key);
+                  return (
+                    <div key={item.key} className="flex items-center justify-between border rounded-xl p-4 bg-muted/10">
+                      <div>
+                        <h4 className="font-semibold text-sm">{item.label}</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                      </div>
+                      <Switch 
+                        checked={setting?.value === 'true'}
+                        onCheckedChange={async (checked) => {
+                          if (setting) {
+                            setSettings(prev => prev.map(p => p.id === setting.id ? { ...p, value: checked.toString() } : p));
+                            updateSetting(setting.id, checked.toString());
+                          } else {
+                            try {
+                              await supabase.from("system_settings").insert([
+                                { key: item.key, value: checked.toString(), description: item.label }
+                              ]);
+                              fetchData();
+                            } catch (err) {
+                              console.error("Failed to create voice setting", err);
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Sliders / Pitch & Rate & Volume */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t">
+                {[
+                  { key: "voice_rate", label: "Voice Rate (Speed)", min: 0.5, max: 2.0, step: 0.1 },
+                  { key: "voice_pitch", label: "Voice Pitch", min: 0.5, max: 2.0, step: 0.1 },
+                  { key: "voice_volume", label: "Volume (0 - 100)", min: 0, max: 100, step: 5 }
+                ].map((item) => {
+                  const setting = settings.find(s => s.key === item.key);
+                  return (
+                    <div key={item.key} className="space-y-2">
+                      <Label className="text-sm font-semibold">{item.label}: {setting?.value || item.min}</Label>
+                      <input 
+                        type="range"
+                        min={item.min}
+                        max={item.max}
+                        step={item.step}
+                        value={parseFloat(setting?.value || "1.0")}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSettings(prev => prev.map(p => p.key === item.key ? { ...p, value: val } : p));
+                        }}
+                        onMouseUp={async (e) => {
+                          const val = (e.target as HTMLInputElement).value;
+                          const targetSetting = settings.find(s => s.key === item.key);
+                          if (targetSetting) {
+                            updateSetting(targetSetting.id, val);
+                          } else {
+                            await supabase.from("system_settings").insert([{ key: item.key, value: val, description: item.label }]);
+                            fetchData();
+                          }
+                        }}
+                        className="w-full accent-primary bg-muted h-1.5 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* MP3 Uploads Section */}
+              <div className="pt-6 border-t space-y-4">
+                <h4 className="font-semibold text-base">Custom MP3 Audio Announcements</h4>
+                <p className="text-xs text-muted-foreground">Upload custom audio files that play instead of the Text-to-Speech voices when triggered.</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { fileName: "welcome.mp3", label: "Welcome / Greeting Sound" },
+                    { fileName: "timed_in.mp3", label: "Time In Confirmation" },
+                    { fileName: "timed_out.mp3", label: "Time Out Confirmation" },
+                    { fileName: "employee_not_found.mp3", label: "Employee Not Found Error" },
+                  ].map((mp3) => (
+                    <div key={mp3.fileName} className="flex items-center justify-between border rounded-xl p-4 bg-muted/10">
+                      <div>
+                        <h5 className="text-sm font-medium">{mp3.label}</h5>
+                        <code className="text-xs text-muted-foreground">{mp3.fileName}</code>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="file" 
+                          accept="audio/mpeg" 
+                          id={`upload-${mp3.fileName}`} 
+                          className="hidden" 
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              const { error } = await supabase.storage.from("voice-assets").upload(mp3.fileName, file, {
+                                upsert: true,
+                                contentType: "audio/mpeg"
+                              });
+                              if (error) throw error;
+                              toast.success(`Uploaded ${mp3.fileName} successfully!`);
+                            } catch (err: any) {
+                              toast.error(`Upload failed: ${err.message}`);
+                            }
+                          }}
+                        />
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => document.getElementById(`upload-${mp3.fileName}`)?.click()}
+                        >
+                          <Upload className="w-4 h-4 mr-2" /> Upload
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <Switch 
-                  checked={settings.find(s => s.key === 'enable_voice_announcement')?.value === 'true'}
-                  onCheckedChange={async (checked) => {
-                    const setting = settings.find(s => s.key === 'enable_voice_announcement');
-                    if (setting) {
-                      setSettings(prev => prev.map(p => p.id === setting.id ? { ...p, value: checked.toString() } : p));
-                      updateSetting(setting.id, checked.toString());
-                    } else {
-                      // Fallback auto-create if not found
-                      try {
-                        await supabase.from("system_settings").insert([
-                          { key: 'enable_voice_announcement', value: checked.toString(), description: 'Enable Text-to-Speech automatic voice announcements for Attendance Kiosk' }
-                        ]);
-                        fetchData();
-                      } catch (err) {
-                        console.error("Failed to create voice setting", err);
-                      }
-                    }
-                  }}
-                />
               </div>
 
               <div className="mt-8 bg-blue-50 dark:bg-blue-950/20 text-blue-800 dark:text-blue-300 p-4 rounded-xl flex items-start gap-3 border border-blue-100 dark:border-blue-900/50">
                 <Info className="w-5 h-5 shrink-0 mt-0.5" />
                 <div className="text-sm leading-relaxed">
-                  <strong>ℹ️ How it works:</strong> The system uses your device's built-in text-to-speech capabilities. It will automatically prioritize high-quality English voices like Google US English, Microsoft David, Aria, or Jenny when available. No MP3 uploads are required!
+                  <strong>ℹ️ Voice Assistant Priority:</strong> The system automatically tries to find and play custom uploaded MP3 files from the `voice-assets` bucket first. If none are found, it falls back to the native Text-to-Speech system tuned to your preferred rate, pitch, and voice guidelines.
                 </div>
               </div>
             </div>
