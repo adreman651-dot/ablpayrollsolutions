@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle, Info, Volume2 } from "lucide-react";
+import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle, Info, Volume2, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { syncAllData } from "@/lib/syncEngine";
 
 
 
