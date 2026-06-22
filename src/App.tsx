@@ -24,7 +24,9 @@ import UserManagement from "./pages/UserManagement";
 import RolePermissions from "./pages/RolePermissions";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
+import SplashScreen from "@/components/SplashScreen";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +35,13 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" /></div>;
   if (!user) return <Navigate to="/auth" replace />;
   return <>{children}</>;
+}
+
+function SplashGate() {
+  const [show, setShow] = useState(() => !sessionStorage.getItem("abl_splash_shown"));
+  useEffect(() => { if (!show) sessionStorage.setItem("abl_splash_shown", "1"); }, [show]);
+  if (!show) return null;
+  return <SplashScreen onDone={() => setShow(false)} />;
 }
 
 const App = () => (
