@@ -24,7 +24,9 @@ import UserManagement from "./pages/UserManagement";
 import RolePermissions from "./pages/RolePermissions";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
+import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
+import SplashScreen from "@/components/SplashScreen";
 
 const queryClient = new QueryClient();
 
@@ -35,11 +37,19 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function SplashGate() {
+  const [show, setShow] = useState(() => !sessionStorage.getItem("abl_splash_shown"));
+  useEffect(() => { if (!show) sessionStorage.setItem("abl_splash_shown", "1"); }, [show]);
+  if (!show) return null;
+  return <SplashScreen onDone={() => setShow(false)} />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <SplashGate />
       <BrowserRouter>
         <AuthProvider>
           <Routes>
