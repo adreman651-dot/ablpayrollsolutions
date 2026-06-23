@@ -104,7 +104,7 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
           local.updated_at || local.created_at || 0
         ).getTime();
         const remoteTs = new Date(
-          remote.updated_at || remote.created_at || 0
+          (remote as any).updated_at || remote.created_at || 0
         ).getTime();
 
         if (remoteTs > localTs) {
