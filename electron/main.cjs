@@ -219,6 +219,13 @@ function createWindow() {
     mainWindow.show();
   });
 
+  mainWindow.on('close', (event) => {
+    if (!app.isQuiting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
   // In production, load build/index.html, in development load dev server
   const isDev = !app.isPackaged;
   if (isDev) {
@@ -405,3 +412,25 @@ ipcMain.handle('export-excel', async (event, data, fileName) => {
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });
+
+// ─── System Tray (minimize to tray on close) ─────────────────────────────────
+const { Tray, Menu, nativeImage } = require('electron');
+let tray = null;
+
+app.whenReady().then(() => {
+  // Tray icon fallback (white circle 16x16)
+  const icon = nativeImage.createEmpty();
+  tray = new Tray(icon);
+  const contextMenu = Menu.buildFromTemplate([
+    { label: 'Open ABL Payroll', click: () => { mainWindow.show(); mainWindow.focus(); } },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { app.quit(); } }
+  ]);
+  tray.setToolTip('ABL Payroll Solutions');
+  tray.setContextMenu(contextMenu);
+  tray.on('double-click', () => { mainWindow.show(); mainWindow.focus(); });
+});
+
+
+
+app.on('before-quit', () => { app.isQuiting = true; });

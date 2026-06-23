@@ -4,9 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Image as ImageIcon, ExternalLink, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { MapPin, Image as ImageIcon, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { offlineExecute } from "@/lib/offlineDb";
+import { recalculatePayrollForDate } from "@/lib/payroll-recalc";
 
 interface AttendanceRecord {
   id: string;
@@ -31,7 +35,8 @@ interface AttendanceRecord {
 }
 
 export default function Attendance() {
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
+  const isAdminOrHR = hasRole('admin') || hasRole('hr');
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split("T")[0]);
@@ -39,12 +44,114 @@ export default function Attendance() {
   // Selfie Modal State
   const [selfieModal, setSelfieModal] = useState<AttendanceRecord | null>(null);
 
+  // Edit Modal State
+  const [editModal, setEditModal] = useState<AttendanceRecord | null>(null);
+  const [editForm, setEditForm] = useState({
+    date: '',
+    time_in: '',
+    time_out: '',
+    location_label_in: '',
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
   const fetchAttendance = async () => {
     let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code)").eq("date", dateFilter).order("time_in", { ascending: false });
     const { data, error } = await query;
     if (error) toast.error(error.message);
     else setRecords((data || []) as any);
     setLoading(false);
+  };
+
+  const openEditModal = (r: AttendanceRecord) => {
+    setEditModal(r);
+    // Convert ISO timestamps to local datetime-local input values
+    const toLocalInput = (iso: string | null) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    setEditForm({
+      date: r.date || '',
+      time_in: toLocalInput(r.time_in),
+      time_out: toLocalInput(r.time_out),
+      location_label_in: r.location_label_in || '',
+      notes: '',
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editModal) return;
+    setSaving(true);
+    try {
+      const timeInISO = editForm.time_in ? new Date(editForm.time_in).toISOString() : null;
+      const timeOutISO = editForm.time_out ? new Date(editForm.time_out).toISOString() : null;
+
+      // Calculate hours worked
+      let hoursWorked: number | null = null;
+      if (timeInISO && timeOutISO) {
+        const diff = (new Date(timeOutISO).getTime() - new Date(timeInISO).getTime()) / 3600000;
+        hoursWorked = Math.round(diff * 100) / 100;
+      }
+
+      // Calculate late minutes (if time_in is after 08:00)
+      let lateMinutes = 0;
+      if (timeInISO) {
+        const tIn = new Date(timeInISO);
+        const cutoff = new Date(tIn);
+        cutoff.setHours(8, 0, 0, 0);
+        if (tIn > cutoff) {
+          lateMinutes = Math.round((tIn.getTime() - cutoff.getTime()) / 60000);
+        }
+      }
+
+      const updates: any = {
+        date: editForm.date,
+        time_in: timeInISO,
+        time_out: timeOutISO,
+        location_label_in: editForm.location_label_in || null,
+        late_minutes: lateMinutes,
+        status: lateMinutes > 0 ? 'Late' : (timeInISO ? 'On Time' : editModal.status),
+      };
+      if (hoursWorked !== null) updates.total_hours = hoursWorked;
+
+      const { error } = await supabase.from('attendance').update(updates).eq('id', editModal.id);
+      if (error) throw error;
+
+      // Audit log to local SQLite
+      try {
+        await offlineExecute(
+          `INSERT INTO audit_logs (user_id, user_email, action, table_name, record_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            user?.id ?? null,
+            user?.email ?? null,
+            'EDIT',
+            'attendance',
+            editModal.id,
+            JSON.stringify({ old: editModal, new: editForm, edited_by: user?.email }),
+            new Date().toISOString(),
+          ]
+        );
+      } catch (auditErr) {
+        console.warn('Audit log write failed:', auditErr);
+      }
+
+      // Recalculate payroll for this date
+      try {
+        await recalculatePayrollForDate(editForm.date);
+      } catch (recalcErr) {
+        console.warn('Payroll recalc failed:', recalcErr);
+      }
+
+      toast.success('Attendance record updated');
+      setEditModal(null);
+      await fetchAttendance();
+    } catch (err: any) {
+      toast.error('Save failed: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   useEffect(() => { fetchAttendance(); }, [dateFilter]);
@@ -91,6 +198,7 @@ export default function Attendance() {
               <TableHead>Date</TableHead>
               <TableHead>Device Used</TableHead>
               <TableHead>Status</TableHead>
+              {isAdminOrHR && <TableHead className="w-20">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -148,6 +256,19 @@ export default function Attendance() {
                       {r.status || "—"}
                     </Badge>
                   </TableCell>
+                  {isAdminOrHR && (
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEditModal(r)}
+                        className="h-8 w-8 p-0"
+                        title="Edit Record"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -215,6 +336,69 @@ export default function Attendance() {
             </div>
           </div>
         </div>
+      )}
+      {/* Edit Modal */}
+      {isAdminOrHR && (
+        <Dialog open={!!editModal} onOpenChange={(open) => { if (!open) setEditModal(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Attendance Record</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              {editModal && (
+                <p className="text-sm text-muted-foreground">
+                  {editModal.employees ? `${editModal.employees.first_name} ${editModal.employees.last_name}` : editModal.employee_name}
+                </p>
+              )}
+              <div className="space-y-1">
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={editForm.date}
+                  onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Time In</Label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.time_in}
+                  onChange={e => setEditForm(f => ({ ...f, time_in: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Time Out</Label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.time_out}
+                  onChange={e => setEditForm(f => ({ ...f, time_out: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Location Label (In)</Label>
+                <Input
+                  value={editForm.location_label_in}
+                  onChange={e => setEditForm(f => ({ ...f, location_label_in: e.target.value }))}
+                  placeholder="e.g. Office, Branch A"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Notes</Label>
+                <Input
+                  value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Optional admin note"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditModal(null)} disabled={saving}>Cancel</Button>
+              <Button onClick={handleEditSave} disabled={saving}>
+                {saving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

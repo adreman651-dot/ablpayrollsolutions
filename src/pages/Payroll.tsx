@@ -11,6 +11,7 @@ import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle, MapPi
 import { toast } from "sonner";
 import {
   formatCurrency, computeWithholdingTax, computeDailyRate, WORKING_DAYS_PER_MONTH,
+  computeSSS, computePhilHealth, computePagIBIG
 } from "@/lib/payroll-utils";
 import { useAuth } from "@/hooks/useAuth";
 import { exportPayrollExcel } from "@/lib/payroll-export";
@@ -193,7 +194,7 @@ export default function Payroll() {
     setProcessing(true);
     try {
       const { data: employees, error: empErr } = await supabase.from("employees")
-        .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution").eq("employment_status", "active");
+        .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution, sss_number, philhealth_number, pagibig_number").eq("employment_status", "active");
       if (empErr) throw empErr;
       if (!employees?.length) { toast.error("No active employees"); return; }
 
@@ -235,10 +236,18 @@ export default function Payroll() {
         const shouldDeductPHIC = emp.phic_schedule === "both" || emp.phic_schedule === currentCutoff;
         const shouldDeductHDMF = emp.hdmf_schedule === "both" || emp.hdmf_schedule === currentCutoff;
 
-        // Strictly use employee-specific amounts. If 0 or blank, deduct 0.
-        const sssMonthly = Number((emp as any).sss_contribution) || 0;
-        const phMonthly = Number((emp as any).phic_contribution) || 0;
-        const piMonthly = Number((emp as any).hdmf_contribution) || 0;
+        // Auto-compute based on ID number if no manual amount is set
+        let sssMonthly = 0;
+        if (Number((emp as any).sss_contribution) > 0) sssMonthly = Number((emp as any).sss_contribution);
+        else if ((emp as any).sss_number && (emp as any).sss_number.trim() !== "") sssMonthly = computeSSS(emp.basic_salary).employee;
+
+        let phMonthly = 0;
+        if (Number((emp as any).phic_contribution) > 0) phMonthly = Number((emp as any).phic_contribution);
+        else if ((emp as any).philhealth_number && (emp as any).philhealth_number.trim() !== "") phMonthly = computePhilHealth(emp.basic_salary).employee;
+
+        let piMonthly = 0;
+        if (Number((emp as any).hdmf_contribution) > 0) piMonthly = Number((emp as any).hdmf_contribution);
+        else if ((emp as any).pagibig_number && (emp as any).pagibig_number.trim() !== "") piMonthly = computePagIBIG(emp.basic_salary).employee;
 
         const sssEE = shouldDeductSSS ? +(sssMonthly * cycleFactor).toFixed(2) : 0;
         const phEE = shouldDeductPHIC ? +(phMonthly * cycleFactor).toFixed(2) : 0;

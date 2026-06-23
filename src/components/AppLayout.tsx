@@ -1,7 +1,12 @@
 import { Outlet, useLocation, Link } from "react-router-dom";
-import { Bell, Search, LayoutDashboard, Users, Clock, DollarSign, CalendarDays, Landmark, FileText, Receipt, Settings, LogOut } from "lucide-react";
+import { Bell, Search, LayoutDashboard, Users, Clock, DollarSign, CalendarDays, Landmark, FileText, Receipt, Settings, LogOut, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
+import { SyncButton } from "@/components/SyncButton";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+
+const APP_VERSION = '1.0.0';
 
 const titles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -35,8 +40,23 @@ export default function AppLayout() {
 
   const visible = dockItems.filter(i => roles.length === 0 || i.roles.some(r => roles.includes(r as any)));
 
+  const [dbVersion, setDbVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.from('system_settings').select('value').eq('key', 'app_version').single()
+      .then(({ data }) => {
+        if (data && data.value) setDbVersion(data.value);
+      });
+  }, []);
+
   return (
     <div className="dark dashboard-shell flex flex-col min-h-screen">
+      {dbVersion && dbVersion !== APP_VERSION && (
+        <div className="bg-amber-500/90 text-amber-950 px-4 py-2 text-center text-sm font-semibold flex items-center justify-center gap-2 relative z-50">
+          <AlertTriangle className="w-4 h-4" />
+          New application version available ({dbVersion}). Please contact your administrator to update.
+        </div>
+      )}
       {/* Top Navbar */}
       <header className="glass-nav sticky top-0 z-30 h-16 flex items-center justify-between px-6 md:px-8">
         <Link to="/dashboard" className="flex items-center gap-3">
@@ -58,6 +78,7 @@ export default function AppLayout() {
         </div>
 
         <div className="flex items-center gap-3">
+          <SyncButton />
           <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors">
             <Bell className="w-[18px] h-[18px] text-slate-200" />
           </button>

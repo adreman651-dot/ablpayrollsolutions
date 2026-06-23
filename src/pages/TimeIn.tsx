@@ -53,6 +53,7 @@ export default function TimeIn() {
   const [enableFaceGate, setEnableFaceGate] = useState(false);
   const [successInfo, setSuccessInfo] = useState<{ name: string; time: string; mode: Mode } | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [gpsStatus, setGpsStatus] = useState<string | null>(null);
 
   const detectionIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -353,6 +354,80 @@ export default function TimeIn() {
     }
   };
 
+  // ─── High-accuracy GPS ────────────────────────────────────────────────────
+  const getPreciseLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number }> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve({ latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
+        return;
+      }
+
+      let best: { latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number } | null = null;
+      let resolved = false;
+
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const acc = pos.coords.accuracy;
+          setGpsStatus(`Acquiring GPS… accuracy: ${Math.round(acc)}m`);
+          if (!best || acc < best.accuracy) {
+            best = {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: acc,
+              altitude: pos.coords.altitude,
+              timestamp: pos.timestamp,
+            };
+          }
+          if (acc <= 20 && !resolved) {
+            resolved = true;
+            navigator.geolocation.clearWatch(watchId);
+            setGpsStatus(null);
+            resolve(best);
+          }
+        },
+        () => {
+          // On error, resolve with last known location
+          if (!resolved) {
+            resolved = true;
+            navigator.geolocation.clearWatch(watchId);
+            setGpsStatus(null);
+            resolve(best ?? { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+      );
+
+      // Timeout after 12 seconds — resolve with best available
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          navigator.geolocation.clearWatch(watchId);
+          setGpsStatus(null);
+          resolve(best ?? { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
+        }
+      }, 12000);
+    });
+  };
+
+  const reverseGeocode = async (lat: number, lng: number, accuracy: number): Promise<string> => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`);
+      const d = await res.json();
+      const a = d.address || {};
+      const street = a.road || a.street || '';
+      const barangay = a.suburb || a.neighbourhood || a.quarter || '';
+      const city = a.city || a.town || a.municipality || a.village || '';
+      const province = a.county || a.province || '';
+      const region = a.state || a.region || '';
+      const country = a.country || '';
+      const postcode = a.postcode || '';
+      const parts = [street, barangay, city, province, region, country, postcode].filter(Boolean);
+      return `${parts.join(', ')} (Accuracy: ${Math.round(accuracy)}m)`;
+    } catch {
+      return address || `${lat.toFixed(5)}, ${lng.toFixed(5)} (Accuracy: ${Math.round(accuracy)}m)`;
+    }
+  };
+
   // ─── Submit punch ─────────────────────────────────────────────────────────
   const submitPunch = async (selectedMode: Mode) => {
     if (!faceDetected || !employeeId) return;
@@ -363,6 +438,18 @@ export default function TimeIn() {
     let photoUrl: string | null = null;
     if (selfieBase64) photoUrl = await uploadSelfie(selfieBase64, employeeId);
 
+    // Acquire high-accuracy GPS + reverse geocode
+    setGpsStatus('Acquiring GPS…');
+    let preciseLocation = { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null as number | null, timestamp: Date.now() };
+    let preciseAddress = address || null;
+    try {
+      preciseLocation = await getPreciseLocation();
+      preciseAddress = await reverseGeocode(preciseLocation.latitude, preciseLocation.longitude, preciseLocation.accuracy);
+    } catch (gpsErr) {
+      console.warn('GPS acquire failed, using last known', gpsErr);
+      setGpsStatus(null);
+    }
+
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const deviceType = isMobile ? "Mobile" : "Desktop";
     const deviceTimestamp = new Date().toISOString();
@@ -372,10 +459,10 @@ export default function TimeIn() {
       const { data, error } = await supabase.rpc("kiosk_punch_v2", {
         _employee_id: employeeId,
         _mode: selectedMode,
-        _latitude: location?.lat ?? null,
-        _longitude: location?.lng ?? null,
+        _latitude: preciseLocation.latitude || null,
+        _longitude: preciseLocation.longitude || null,
         _photo_url: photoUrl,
-        _address: address || null,
+        _address: preciseAddress || null,
         _employee_code: employeeCodeStr,
         _employee_name: employeeName,
         _device_type: deviceType,
@@ -442,6 +529,13 @@ export default function TimeIn() {
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black text-white select-none">
+      {/* GPS Acquiring Overlay */}
+      {gpsStatus && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex flex-col items-center justify-center gap-4 text-center p-6">
+          <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
+          <p className="text-lg font-semibold text-white">{gpsStatus}</p>
+        </div>
+      )}
       {/* Back to Home button */}
       <button
         onClick={() => navigate("/")}

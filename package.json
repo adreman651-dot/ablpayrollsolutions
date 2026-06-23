@@ -16,6 +16,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "electron:start": "electron electron/main.cjs",
+    "electron:dev": "concurrently \"vite --port 8080\" \"wait-on http://localhost:8080 && electron electron/main.cjs\"",
+    "electron:rebuild": "electron-rebuild -f -w better-sqlite3",
+    "electron:build:win": "vite build && electron-builder --win --x64",
+    "electron:build:win:skip": "vite build && electron-builder --win --x64 --config.npmRebuild=false",
+    "electron:build:mac": "vite build && electron-builder --mac",
+    "electron:build:linux": "vite build && electron-builder --linux",
+    "electron:build:all": "vite build && electron-builder --win --mac --linux",
     "electron:build": "vite build && electron-builder --win",
     "android:build": "vite build && npx cap sync android && cd android && gradlew assembleDebug",
     "android:release": "vite build && npx cap sync android && cd android && gradlew assembleRelease",
@@ -84,6 +91,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.1",
+    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
@@ -93,6 +101,7 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.2",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "eslint": "^9.32.0",
@@ -105,27 +114,49 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.ablpayroll.system",
     "productName": "ABL Payroll System",
     "npmRebuild": false,
+    "asar": true,
+    "asarUnpack": [
+      "**/better-sqlite3/**",
+      "**/node_modules/better-sqlite3/**"
+    ],
     "directories": {
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "public/favicon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "artifactName": "ABL-Payroll-Setup.${ext}"
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ABL Payroll System",
+      "artifactName": "ABL-Payroll-Setup-${version}.${ext}",
+      "installerIcon": "public/favicon.ico",
+      "uninstallerIcon": "public/favicon.ico",
+      "license": "LICENSE.txt"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/favicon.icns"
+    },
+    "linux": {
+      "target": "AppImage"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
       "package.json"
-    ]
+    ],
+    "extraResources": [],
+    "electronVersion": "31.7.7"
   }
 }

@@ -127,6 +127,22 @@ export default function Settings() {
 
     setSettings(currentSettings);
 
+    // Auto-init app_version setting
+    const appVersionSetting = currentSettings.find(s => s.key === 'app_version');
+    if (!appVersionSetting) {
+      try {
+        await supabase.from("system_settings").insert([
+          { key: 'app_version', value: '1.0.0', description: 'Application version. Update this when a new APK is deployed.' }
+        ]);
+        const refetch2 = await supabase.from("system_settings").select("*").order("key");
+        if (refetch2.data) currentSettings = refetch2.data;
+      } catch (err) {
+        console.error("Auto-init app_version setting failed", err);
+      }
+    }
+
+    setSettings(currentSettings);
+
     const roleData = rolesRes.data || [];
     const userIds = [...new Set(roleData.map(r => r.user_id))];
     if (userIds.length) {

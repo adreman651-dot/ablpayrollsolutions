@@ -73,6 +73,7 @@ export const initOfflineDb = async (): Promise<void> => {
           selfie_image_path TEXT,
           latitude REAL,
           longitude REAL,
+          gps_accuracy REAL,
           exact_address TEXT,
           sync_status TEXT DEFAULT 'pending',
           created_at TEXT,
