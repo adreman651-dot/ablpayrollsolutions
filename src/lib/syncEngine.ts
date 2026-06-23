@@ -50,14 +50,14 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
       // Check if remote already has this record
       const { data: existing } = await supabase
         .from('attendance')
-        .select('id, updated_at')
+        .select('id, created_at')
         .eq('id', record.id)
         .maybeSingle();
 
       if (existing) {
         // Conflict: compare timestamps — newest wins
         const localTs = new Date(record.updated_at || record.created_at || 0).getTime();
-        const remoteTs = new Date(existing.updated_at || 0).getTime();
+        const remoteTs = new Date((existing as any).created_at || 0).getTime();
         if (remoteTs >= localTs) {
           // Remote is newer or equal — mark synced, download will overwrite local
           await offlineExecute(
