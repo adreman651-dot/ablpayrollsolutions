@@ -55,6 +55,27 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
       </div>
 
       <style>{`
+        /* Default (mobile / portrait): fill the entire Android screen */
+        .splash-stage {
+          width: 100vw;
+          height: 100vh;
+          height: 100dvh;
+        }
+        .splash-img { object-fit: cover; }
+        .splash-spark-wrap { top: 50%; }
+
+        /* Tablet & desktop landscape: letterbox so the full poster shows */
+        @media (min-width: 768px) and (orientation: landscape) {
+          .splash-stage {
+            width: auto;
+            height: 100vh;
+            aspect-ratio: 945 / 1536;
+            max-width: 100vw;
+          }
+          .splash-img { object-fit: contain; }
+          .splash-spark-wrap { top: 63%; }
+        }
+
         @keyframes splashSlideLeft {
           0%   { transform: translateX(-30%); opacity: 0; }
           55%  { transform: translateX(-2%); opacity: 1; }
