@@ -1,13 +1,5 @@
 import { useEffect, useState } from "react";
-import splashAsset from "@/assets/abl-splash.png.asset.json";
 
-/**
- * Full-screen splash. Splits the source poster into a left and right half
- * that slide in from off-screen and "connect" in the middle — so the human
- * hand and the AI robot hand appear to move toward each other and meet,
- * with a pulsing spark where their fingertips touch.
- * Fits both desktop (letterboxed on dark bg) and mobile/Android (object-contain).
- */
 export default function SplashScreen({ onDone }: { onDone: () => void }) {
   const [leaving, setLeaving] = useState(false);
 
@@ -19,84 +11,100 @@ export default function SplashScreen({ onDone }: { onDone: () => void }) {
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] bg-[#05021a] flex items-center justify-center overflow-hidden transition-opacity duration-700 ${leaving ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+      className={`fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden transition-opacity duration-700 ${leaving ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+      style={{ background: "radial-gradient(ellipse at center, #0a0e27 0%, #050714 100%)", fontFamily: "'Segoe UI', Arial, sans-serif" }}
     >
-      {/* Ambient gradient backdrop so it fills any aspect ratio (desktop + android) */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_60%,#1e1b4b_0%,#05021a_70%)]" />
+      <div className="splash-container relative flex flex-col items-center justify-center px-6 text-center">
+        <span className="ring" />
+        <span className="ring r2" />
+        <span className="ring r3" />
+        <span className="glow-dot" />
 
-      {/* Stage that holds both halves of the poster.
-          Mobile/portrait: fills the whole viewport (cover) — no black bars on Android.
-          Desktop/landscape: letterboxed via aspect-ratio so the full poster is visible. */}
-      <div className="relative w-full h-full flex items-center justify-center">
-        <div className="splash-stage relative">
-          {/* Left half slides in from the left */}
-          <img
-            src={splashAsset.url}
-            alt=""
-            aria-hidden
-            className="splash-img absolute inset-0 w-full h-full splash-left"
-            style={{ clipPath: "inset(0 50% 0 0)", objectPosition: "50% 35%" }}
-            draggable={false}
-          />
-          {/* Right half slides in from the right */}
-          <img
-            src={splashAsset.url}
-            alt="ABL Payroll Solutions"
-            className="splash-img absolute inset-0 w-full h-full splash-right"
-            style={{ clipPath: "inset(0 0 0 50%)", objectPosition: "50% 35%" }}
-            draggable={false}
-          />
-
-          {/* Connection spark — pulses at the point where the fingertips meet */}
-          <div className="splash-spark-wrap absolute left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-            <div className="splash-spark w-24 h-24 rounded-full bg-[radial-gradient(circle,#ffffff_0%,#a78bfa_30%,rgba(124,58,237,0)_70%)]" />
-          </div>
+        <h1 className="logo-text">ABL</h1>
+        <div className="subtitle">SOFTWARE SOLUTIONS</div>
+        <div className="divider" />
+        <div className="services">
+          PAYROLL <span>•</span> ACCOUNTING <span>•</span> SALES <span>•</span> MARKETING
         </div>
       </div>
 
       <style>{`
-        /* Default (mobile / portrait): fill the entire Android screen */
-        .splash-stage {
-          width: 100vw;
-          height: 100vh;
-          height: 100dvh;
+        .ring {
+          position: absolute;
+          border-radius: 50%;
+          border: 1px solid rgba(79,195,247,0.35);
+          width: 220px; height: 220px;
+          top: 50%; left: 50%;
+          margin-top: -110px; margin-left: -110px;
+          animation: splashPulse 2.4s ease-out infinite;
         }
-        .splash-img { object-fit: cover; }
-        .splash-spark-wrap { top: 50%; }
-
-        /* Tablet & desktop landscape: letterbox so the full poster shows */
-        @media (min-width: 768px) and (orientation: landscape) {
-          .splash-stage {
-            width: auto;
-            height: 100vh;
-            aspect-ratio: 945 / 1536;
-            max-width: 100vw;
-          }
-          .splash-img { object-fit: contain; }
-          .splash-spark-wrap { top: 63%; }
+        .ring.r2 { animation-delay: 0.8s; }
+        .ring.r3 { animation-delay: 1.6s; }
+        @keyframes splashPulse {
+          0% { transform: scale(0.7); opacity: 0.7; }
+          100% { transform: scale(2.2); opacity: 0; }
         }
-
-        @keyframes splashSlideLeft {
-          0%   { transform: translateX(-30%); opacity: 0; }
-          55%  { transform: translateX(-2%); opacity: 1; }
-          70%  { transform: translateX(-2%); }
-          100% { transform: translateX(0); opacity: 1; }
+        .logo-text {
+          font-size: clamp(64px, 16vw, 110px);
+          font-weight: 900;
+          letter-spacing: 6px;
+          margin: 0;
+          opacity: 0; transform: scale(0.7);
+          animation: splashPopIn 1s cubic-bezier(.2,.9,.3,1.3) forwards 0.3s;
+          background: linear-gradient(180deg,#ffffff 0%,#d8e6f5 35%,#7fb8e8 55%,#3a6fa8 75%,#1a3a5c 100%);
+          -webkit-background-clip: text; background-clip: text; color: transparent;
+          filter: drop-shadow(0 0 18px rgba(79,195,247,0.5));
+          position: relative; z-index: 2;
         }
-        @keyframes splashSlideRight {
-          0%   { transform: translateX(30%); opacity: 0; }
-          55%  { transform: translateX(2%); opacity: 1; }
-          70%  { transform: translateX(2%); }
-          100% { transform: translateX(0); opacity: 1; }
+        .subtitle {
+          margin-top: 6px;
+          font-size: clamp(14px, 3.2vw, 22px);
+          font-weight: 600; letter-spacing: 5px;
+          opacity: 0;
+          animation: splashFadeUp 0.8s ease forwards 1.2s;
+          background: linear-gradient(90deg,#4fc3f7,#7c4dff,#4fc3f7);
+          -webkit-background-clip: text; background-clip: text; color: transparent;
         }
-        @keyframes splashSpark {
-          0%, 60%  { transform: scale(0); opacity: 0; }
-          75%      { transform: scale(1.4); opacity: 1; }
-          85%      { transform: scale(0.9); opacity: 0.9; }
-          100%     { transform: scale(1.6); opacity: 0.85; }
+        .divider {
+          width: 0; height: 1px;
+          background: linear-gradient(90deg, transparent, #4fc3f7, transparent);
+          margin: 16px 0;
+          animation: splashGrowLine 0.8s ease forwards 1.5s;
         }
-        .splash-left  { animation: splashSlideLeft  2.4s cubic-bezier(.22,.9,.27,1) forwards; }
-        .splash-right { animation: splashSlideRight 2.4s cubic-bezier(.22,.9,.27,1) forwards; }
-        .splash-spark { animation: splashSpark 2.6s ease-out forwards; filter: blur(1px); }
+        .services {
+          font-size: clamp(10px, 2.4vw, 12px);
+          letter-spacing: 3px; color: #d8e6f5;
+          opacity: 0;
+          animation: splashFadeUp 0.8s ease forwards 1.7s;
+        }
+        .services span { color: #4fc3f7; margin: 0 4px; }
+        .glow-dot {
+          position: absolute; width: 6px; height: 6px;
+          background: #fff; border-radius: 50%;
+          top: 50%; left: 50%;
+          transform: translate(-50%,-50%);
+          box-shadow: 0 0 30px 12px rgba(79,195,247,0.7);
+          opacity: 0;
+          animation: splashFlash 1s ease forwards;
+        }
+        @keyframes splashPopIn {
+          0% { opacity: 0; transform: scale(0.6); }
+          60% { opacity: 1; transform: scale(1.08); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes splashFadeUp {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes splashGrowLine {
+          from { width: 0; }
+          to { width: min(260px, 70vw); }
+        }
+        @keyframes splashFlash {
+          0% { opacity: 0; transform: translate(-50%,-50%) scale(0.2); }
+          40% { opacity: 1; transform: translate(-50%,-50%) scale(1.3); }
+          100% { opacity: 0; transform: translate(-50%,-50%) scale(0.4); }
+        }
       `}</style>
     </div>
   );
