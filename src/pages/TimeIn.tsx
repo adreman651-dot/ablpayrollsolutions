@@ -54,6 +54,10 @@ export default function TimeIn() {
   const [successInfo, setSuccessInfo] = useState<{ name: string; time: string; mode: Mode } | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [gpsStatus, setGpsStatus] = useState<string | null>(null);
+  const [empFaceEnabled, setEmpFaceEnabled] = useState(false);
+  const [empFaceDescriptor, setEmpFaceDescriptor] = useState<Float32Array | null>(null);
+  const [faceMatchPct, setFaceMatchPct] = useState<number | null>(null);
+  const [multipleFaces, setMultipleFaces] = useState(false);
 
   const detectionIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
