@@ -86,9 +86,51 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setForm(emptyForm); }}>
       {!editing && (
+export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, onSave, editing, emptyForm }: Props) {
+  const payrollTypeLabel = PAYROLL_TYPES.find(p => p.value === form.payroll_type)?.label || "Monthly Rate";
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [registering, setRegistering] = useState(false);
+
+  const handlePhotoUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const fname = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("employee-photos").upload(fname, file, { contentType: file.type });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("employee-photos").getPublicUrl(fname);
+      const photoUrl = data.publicUrl;
+
+      // Compute face descriptor from uploaded image
+      setRegistering(true);
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = URL.createObjectURL(file);
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("image load fail")); });
+      const desc = await computeDescriptorFromImage(img);
+      if (!desc) {
+        toast.error("No face detected in the photo. Please upload a clear front-facing photo.");
+        setForm({ ...form, profile_photo_url: photoUrl, face_descriptor: null });
+      } else {
+        setForm({ ...form, profile_photo_url: photoUrl, face_descriptor: descriptorToArray(desc), face_detection_enabled: form.face_detection_enabled ?? true });
+        toast.success("Face registered successfully.");
+      }
+    } catch (e: any) {
+      toast.error("Photo upload failed: " + (e.message || e));
+    } finally {
+      setUploading(false);
+      setRegistering(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setForm(emptyForm); }}>
+      {!editing && (
         <DialogTrigger asChild>
           <Button><Plus className="w-4 h-4 mr-2" />Add Employee</Button>
         </DialogTrigger>
+      )}
       )}
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
