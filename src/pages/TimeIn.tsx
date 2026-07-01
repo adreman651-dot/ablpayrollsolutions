@@ -309,6 +309,7 @@ export default function TimeIn() {
   const resetKiosk = () => {
     setCode(""); setEmployeeName(""); setEmployeeId("");
     setEnableFaceGate(false); setFaceDetected(false); setMode(null);
+    setEmpFaceEnabled(false); setEmpFaceDescriptor(null); setFaceMatchPct(null); setMultipleFaces(false);
     if (detectionIntervalRef.current) { clearInterval(detectionIntervalRef.current); detectionIntervalRef.current = null; }
     const ctx = overlayCanvasRef.current?.getContext("2d");
     if (ctx && overlayCanvasRef.current) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
