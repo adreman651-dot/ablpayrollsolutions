@@ -157,6 +157,9 @@ export default function Employees() {
       sss_contribution: emp.sss_contribution || 0,
       phic_contribution: emp.phic_contribution || 0,
       hdmf_contribution: emp.hdmf_contribution || 0,
+      profile_photo_url: emp.profile_photo_url || undefined,
+      face_descriptor: emp.face_descriptor ?? null,
+      face_detection_enabled: !!emp.face_detection_enabled,
     });
     setDialogOpen(true);
   };
