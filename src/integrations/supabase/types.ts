@@ -18,7 +18,14 @@ export type Database = {
         Row: {
           created_at: string
           date: string
+          device_timestamp: string | null
+          device_type: string | null
+          employee_code: string | null
           employee_id: string
+          employee_name: string | null
+          face_detection_enabled: boolean | null
+          face_match_percentage: number | null
+          face_verified: boolean | null
           id: string
           late_minutes: number | null
           latitude: number | null
@@ -44,7 +51,14 @@ export type Database = {
         Insert: {
           created_at?: string
           date?: string
+          device_timestamp?: string | null
+          device_type?: string | null
+          employee_code?: string | null
           employee_id: string
+          employee_name?: string | null
+          face_detection_enabled?: boolean | null
+          face_match_percentage?: number | null
+          face_verified?: boolean | null
           id?: string
           late_minutes?: number | null
           latitude?: number | null
@@ -70,7 +84,14 @@ export type Database = {
         Update: {
           created_at?: string
           date?: string
+          device_timestamp?: string | null
+          device_type?: string | null
+          employee_code?: string | null
           employee_id?: string
+          employee_name?: string | null
+          face_detection_enabled?: boolean | null
+          face_match_percentage?: number | null
+          face_verified?: boolean | null
           id?: string
           late_minutes?: number | null
           latitude?: number | null
@@ -113,6 +134,8 @@ export type Database = {
           email: string | null
           employee_code: string
           employment_status: string
+          face_descriptor: Json | null
+          face_detection_enabled: boolean
           first_name: string
           hdmf_contribution: number
           hdmf_schedule: string
@@ -144,6 +167,8 @@ export type Database = {
           email?: string | null
           employee_code: string
           employment_status?: string
+          face_descriptor?: Json | null
+          face_detection_enabled?: boolean
           first_name: string
           hdmf_contribution?: number
           hdmf_schedule?: string
@@ -175,6 +200,8 @@ export type Database = {
           email?: string | null
           employee_code?: string
           employment_status?: string
+          face_descriptor?: Json | null
+          face_detection_enabled?: boolean
           first_name?: string
           hdmf_contribution?: number
           hdmf_schedule?: string
@@ -594,6 +621,7 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_hr: { Args: never; Returns: boolean }
       is_payroll_officer: { Args: never; Returns: boolean }
+      kiosk_get_face_data: { Args: { _employee_id: string }; Returns: Json }
       kiosk_get_today_attendance: {
         Args: { _employee_id: string }
         Returns: Json
@@ -626,17 +654,36 @@ export type Database = {
         }
         Returns: Json
       }
-      kiosk_punch_v2: {
-        Args: {
-          _address?: string
-          _employee_id: string
-          _latitude?: number
-          _longitude?: number
-          _mode: string
-          _photo_url?: string
-        }
-        Returns: Json
-      }
+      kiosk_punch_v2:
+        | {
+            Args: {
+              _address?: string
+              _employee_id: string
+              _latitude?: number
+              _longitude?: number
+              _mode: string
+              _photo_url?: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              _address?: string
+              _device_timestamp?: string
+              _device_type?: string
+              _employee_code?: string
+              _employee_id: string
+              _employee_name?: string
+              _face_detection_enabled?: boolean
+              _face_match_percentage?: number
+              _face_verified?: boolean
+              _latitude?: number
+              _longitude?: number
+              _mode: string
+              _photo_url?: string
+            }
+            Returns: Json
+          }
     }
     Enums: {
       app_role: "admin" | "hr" | "payroll_officer" | "employee"
