@@ -40,6 +40,9 @@ const emptyForm = {
   employment_status: "active", payroll_type: "monthly_rate",
   sss_schedule: "both", phic_schedule: "both", hdmf_schedule: "both",
   sss_contribution: 0, phic_contribution: 0, hdmf_contribution: 0,
+  profile_photo_url: undefined as string | undefined,
+  face_descriptor: null as number[] | null,
+  face_detection_enabled: false,
 };
 
 function payrollTypeLabel(type: string | null): string {
