@@ -723,32 +723,38 @@ export default function TimeIn() {
                 </div>
 
                 <div className="flex gap-4">
-                  {/* Show only TIME IN button if routeMode is 'in', only TIME OUT if 'out', both if no route mode */}
-                  {(!routeMode || routeMode === "in") && (
-                    <button
-                      onClick={() => submitPunch("in")}
-                      disabled={!faceDetected || submitting}
-                      className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
-                        ${faceDetected && !submitting
-                          ? "bg-[#00C853] hover:bg-[#00E676] active:scale-95"
-                          : "bg-[#00C853]/40 cursor-not-allowed opacity-50"}`}
-                    >
-                      {submitting ? "..." : "TIME IN"}
-                    </button>
-                  )}
-                  {(!routeMode || routeMode === "out") && (
-                    <button
-                      onClick={() => submitPunch("out")}
-                      disabled={!faceDetected || submitting}
-                      className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
-                        ${faceDetected && !submitting
-                          ? "bg-[#D50000] hover:bg-[#FF1744] active:scale-95"
-                          : "bg-[#D50000]/40 cursor-not-allowed opacity-50"}`}
-                    >
-                      {submitting ? "..." : "TIME OUT"}
-                    </button>
-                  )}
+                  {(() => {
+                    const verified = !empFaceEnabled || (!multipleFaces && faceMatchPct !== null && faceMatchPct >= 85);
+                    const ready = faceDetected && verified && !submitting;
+                    return <>
+                      {(!routeMode || routeMode === "in") && (
+                        <button
+                          onClick={() => submitPunch("in")}
+                          disabled={!ready}
+                          className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                            ${ready
+                              ? "bg-[#00C853] hover:bg-[#00E676] active:scale-95"
+                              : "bg-[#00C853]/40 cursor-not-allowed opacity-50"}`}
+                        >
+                          {submitting ? "..." : "TIME IN"}
+                        </button>
+                      )}
+                      {(!routeMode || routeMode === "out") && (
+                        <button
+                          onClick={() => submitPunch("out")}
+                          disabled={!ready}
+                          className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                            ${ready
+                              ? "bg-[#D50000] hover:bg-[#FF1744] active:scale-95"
+                              : "bg-[#D50000]/40 cursor-not-allowed opacity-50"}`}
+                        >
+                          {submitting ? "..." : "TIME OUT"}
+                        </button>
+                      )}
+                    </>;
+                  })()}
                 </div>
+
 
                 <button
                   onClick={resetKiosk}
