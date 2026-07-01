@@ -39,8 +39,15 @@ export default function Attendance() {
   const isAdminOrHR = hasRole('admin') || hasRole('hr');
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterMode, setFilterMode] = useState<"day" | "month" | "range">("day");
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split("T")[0]);
-  
+  const [monthFilter, setMonthFilter] = useState(new Date().toISOString().slice(0, 7));
+  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split("T")[0]);
+  const [dateTo, setDateTo] = useState(new Date().toISOString().split("T")[0]);
+  const [employeeFilter, setEmployeeFilter] = useState<string>("all");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [employees, setEmployees] = useState<any[]>([]);
+
   // Selfie Modal State
   const [selfieModal, setSelfieModal] = useState<AttendanceRecord | null>(null);
 
@@ -56,10 +63,26 @@ export default function Attendance() {
   const [saving, setSaving] = useState(false);
 
   const fetchAttendance = async () => {
-    let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code)").eq("date", dateFilter).order("time_in", { ascending: false });
+    setLoading(true);
+    let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code, department)").order("date", { ascending: false }).order("time_in", { ascending: false });
+    if (filterMode === "day") {
+      query = query.eq("date", dateFilter);
+    } else if (filterMode === "month") {
+      const [y, m] = monthFilter.split("-").map(Number);
+      const start = `${monthFilter}-01`;
+      const endDate = new Date(y, m, 0).toISOString().split("T")[0];
+      query = query.gte("date", start).lte("date", endDate);
+    } else {
+      query = query.gte("date", dateFrom).lte("date", dateTo);
+    }
+    if (employeeFilter !== "all") query = query.eq("employee_id", employeeFilter);
     const { data, error } = await query;
     if (error) toast.error(error.message);
-    else setRecords((data || []) as any);
+    else {
+      let rows = (data || []) as any[];
+      if (departmentFilter !== "all") rows = rows.filter(r => r.employees?.department === departmentFilter);
+      setRecords(rows as any);
+    }
     setLoading(false);
   };
 
