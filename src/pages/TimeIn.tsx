@@ -112,7 +112,12 @@ export default function TimeIn() {
       try {
         const faceapi = (window as any).faceapi;
         if (faceapi) {
-          await faceapi.nets.tinyFaceDetector.loadFromUri("https://justadudewhohacks.github.io/face-api.js/models");
+          const MODELS = "https://justadudewhohacks.github.io/face-api.js/models";
+          await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODELS),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODELS),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODELS),
+          ]);
           setFaceApiLoaded(true);
         }
       } catch (e) {
