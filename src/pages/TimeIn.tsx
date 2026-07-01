@@ -363,9 +363,26 @@ export default function TimeIn() {
     // We no longer auto-set the mode. Let the user choose via the buttons.
     setMode(null);
 
+    // Fetch face verification data for this employee
+    try {
+      const { data: faceData } = await supabase.rpc("kiosk_get_face_data", { _employee_id: employee.id });
+      const fd = faceData as any;
+      const enabled = !!fd?.face_detection_enabled;
+      const desc = fd?.face_descriptor;
+      setEmpFaceEnabled(enabled);
+      if (enabled && Array.isArray(desc) && desc.length > 0) {
+        setEmpFaceDescriptor(new Float32Array(desc));
+      } else if (enabled) {
+        toast.error("Face detection enabled but no registered face on file.");
+        setEmpFaceEnabled(false);
+      }
+    } catch (e) {
+      console.warn("Face data fetch failed", e);
+    }
+
     // Make sure voices are loaded by calling getVoices once before speaking
     if ("speechSynthesis" in window) window.speechSynthesis.getVoices();
-    
+
     speakAnnouncement("greeting", fullName, padded);
     setEnableFaceGate(true);
     setSubmitting(false);
