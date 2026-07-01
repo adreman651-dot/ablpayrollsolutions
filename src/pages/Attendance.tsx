@@ -177,17 +177,29 @@ export default function Attendance() {
     }
   };
 
-  useEffect(() => { fetchAttendance(); }, [dateFilter]);
+  useEffect(() => { fetchAttendance(); }, [filterMode, dateFilter, monthFilter, dateFrom, dateTo, employeeFilter, departmentFilter]);
+  useEffect(() => {
+    supabase.from("employees").select("id, first_name, last_name, employee_code, department").order("last_name").then(({ data }) => setEmployees(data || []));
+  }, []);
+
+  const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
+
+  const totals = {
+    days: new Set(records.map(r => `${r.employee_id}_${r.date}`)).size,
+    hours: records.reduce((s, r: any) => s + (r.total_hours || 0), 0),
+    late: records.filter((r: any) => (r.late_minutes || 0) > 0).length,
+    undertime: records.filter((r: any) => (r.undertime_minutes || 0) > 0).length,
+  };
 
   const LocationCell = ({ label, lat, lng }: { label: string | null, lat: number | null, lng: number | null }) => {
     if (!lat || !lng) return <span className="text-muted-foreground">—</span>;
     const gmapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
     const displayLabel = label || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    
+
     return (
-      <a 
-        href={gmapsUrl} 
-        target="_blank" 
+      <a
+        href={gmapsUrl}
+        target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-1 hover:text-primary transition-colors group"
         title={displayLabel}
@@ -205,8 +217,40 @@ export default function Attendance() {
         <p className="page-description">Track daily time-in and time-out with GPS and selfies</p>
       </div>
 
-      <div className="flex items-center gap-3 mb-4">
-        <Input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="w-48" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Days Worked</div><div className="text-xl font-semibold">{totals.days}</div></div>
+        <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Total Hours</div><div className="text-xl font-semibold">{totals.hours.toFixed(2)}</div></div>
+        <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Late</div><div className="text-xl font-semibold">{totals.late}</div></div>
+        <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Undertime</div><div className="text-xl font-semibold">{totals.undertime}</div></div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <select value={filterMode} onChange={e => setFilterMode(e.target.value as any)} className="h-10 px-3 rounded-md border border-border bg-background text-sm">
+          <option value="day">Daily</option>
+          <option value="month">Monthly</option>
+          <option value="range">Date Range</option>
+        </select>
+        {filterMode === "day" && (
+          <Input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="w-48" />
+        )}
+        {filterMode === "month" && (
+          <Input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className="w-48" />
+        )}
+        {filterMode === "range" && (
+          <>
+            <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40" />
+            <span className="text-muted-foreground">to</span>
+            <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40" />
+          </>
+        )}
+        <select value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className="h-10 px-3 rounded-md border border-border bg-background text-sm min-w-[180px]">
+          <option value="all">All Employees</option>
+          {employees.map(e => <option key={e.id} value={e.id}>{e.employee_code} — {e.last_name}, {e.first_name}</option>)}
+        </select>
+        <select value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} className="h-10 px-3 rounded-md border border-border bg-background text-sm min-w-[160px]">
+          <option value="all">All Departments</option>
+          {departments.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -228,7 +272,7 @@ export default function Attendance() {
             {loading ? (
               <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
             ) : records.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">No records for this date</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">No records for the selected filters</TableCell></TableRow>
             ) : (
               records.map(r => (
                 <TableRow key={r.id}>
