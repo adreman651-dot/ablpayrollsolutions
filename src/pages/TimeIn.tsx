@@ -710,8 +710,16 @@ export default function TimeIn() {
             ) : (
               <div className="flex flex-col items-center gap-5 pointer-events-auto">
                 {/* Face status hint */}
-                <div className="text-white/70 text-sm tracking-widest uppercase">
-                  {faceDetected ? "✓ Face Detected — Ready" : "Align face in frame…"}
+                <div className="text-white/80 text-sm tracking-widest uppercase text-center">
+                  {multipleFaces
+                    ? "⚠ Only one face allowed"
+                    : empFaceEnabled
+                      ? (faceMatchPct === null
+                          ? "Align face in frame…"
+                          : faceMatchPct >= 85
+                            ? `✓ Verified — Match ${faceMatchPct.toFixed(0)}%`
+                            : `✗ Not matched — ${faceMatchPct.toFixed(0)}% (need 85%)`)
+                      : (faceDetected ? "✓ Face Detected — Ready" : "Align face in frame…")}
                 </div>
 
                 <div className="flex gap-4">
