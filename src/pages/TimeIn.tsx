@@ -185,12 +185,54 @@ export default function TimeIn() {
 
     detectionIntervalRef.current = window.setInterval(async () => {
       if (!video || video.paused || video.ended) return;
-      const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
+      const options = new faceapi.TinyFaceDetectorOptions();
+
+      // If face verification is required for this employee, look for all faces + descriptor
+      if (empFaceEnabled && empFaceDescriptor) {
+        const results = await faceapi
+          .detectAllFaces(video, options)
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!results || results.length === 0) {
+          setFaceDetected(false); setMultipleFaces(false); setFaceMatchPct(null);
+          return;
+        }
+        if (results.length > 1) {
+          setMultipleFaces(true); setFaceDetected(false); setFaceMatchPct(null);
+          return;
+        }
+        setMultipleFaces(false);
+        const r = faceapi.resizeResults(results, { width: video.videoWidth, height: video.videoHeight })[0];
+        const b = r.detection.box;
+        // Euclidean distance -> match %
+        const desc: Float32Array = r.descriptor;
+        let dist = 0;
+        for (let i = 0; i < desc.length; i++) { const d = desc[i] - empFaceDescriptor[i]; dist += d * d; }
+        dist = Math.sqrt(dist);
+        // face-api distance: 0 (identical) - typical threshold 0.6. Convert to %.
+        const pct = Math.max(0, Math.min(100, (1 - dist / 0.6) * 100));
+        setFaceMatchPct(pct);
+        setFaceDetected(true);
+        if (ctx) {
+          ctx.strokeStyle = pct >= 85 ? "#00C853" : "#FF9800";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(b.x, b.y, b.width, b.height);
+          ctx.fillStyle = pct >= 85 ? "#00C853" : "#FF9800";
+          ctx.font = "16px sans-serif";
+          ctx.fillText(`Match: ${pct.toFixed(0)}%`, b.x, Math.max(16, b.y - 6));
+        }
+        return;
+      }
+
+      // No face verification – simple presence detection only
+      const detection = await faceapi.detectSingleFace(video, options);
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (detection) {
-          const r = faceapi.resizeResults(detection, displaySize);
+          const r = faceapi.resizeResults(detection, { width: video.videoWidth, height: video.videoHeight });
           const b = r.box;
           ctx.strokeStyle = "#00C853";
           ctx.lineWidth = 2;
@@ -207,7 +249,7 @@ export default function TimeIn() {
       const ctx = overlayCanvasRef.current?.getContext("2d");
       if (ctx && overlayCanvasRef.current) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
     };
-  }, [enableFaceGate, cameraReady, faceApiLoaded, phase]);
+  }, [enableFaceGate, cameraReady, faceApiLoaded, phase, empFaceEnabled, empFaceDescriptor]);
 
   // ─── Live TTS greeting while typing the employee code ────────────────────
   const lastSpokenCodeRef = useRef<string>("");
