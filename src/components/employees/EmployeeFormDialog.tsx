@@ -1,10 +1,15 @@
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, Camera, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { computeDescriptorFromImage, descriptorToArray } from "@/lib/faceApi";
+import { toast } from "sonner";
 
 interface EmployeeFormData {
   first_name: string;
@@ -29,6 +34,9 @@ interface EmployeeFormData {
   sss_contribution: number;
   phic_contribution: number;
   hdmf_contribution: number;
+  profile_photo_url?: string;
+  face_descriptor?: number[] | null;
+  face_detection_enabled?: boolean;
 }
 
 interface Props {
@@ -74,6 +82,40 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, onSave, editing, emptyForm }: Props) {
   const payrollTypeLabel = PAYROLL_TYPES.find(p => p.value === form.payroll_type)?.label || "Monthly Rate";
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [registering, setRegistering] = useState(false);
+
+  const handlePhotoUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const fname = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("employee-photos").upload(fname, file, { contentType: file.type });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("employee-photos").getPublicUrl(fname);
+      const photoUrl = data.publicUrl;
+
+      setRegistering(true);
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = URL.createObjectURL(file);
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error("image load fail")); });
+      const desc = await computeDescriptorFromImage(img);
+      if (!desc) {
+        toast.error("No face detected in the photo. Please upload a clear front-facing photo.");
+        setForm({ ...form, profile_photo_url: photoUrl, face_descriptor: null });
+      } else {
+        setForm({ ...form, profile_photo_url: photoUrl, face_descriptor: descriptorToArray(desc), face_detection_enabled: form.face_detection_enabled ?? true });
+        toast.success("Face registered successfully.");
+      }
+    } catch (e: any) {
+      toast.error("Photo upload failed: " + (e.message || e));
+    } finally {
+      setUploading(false);
+      setRegistering(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setForm(emptyForm); }}>
@@ -113,6 +155,51 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           <div className="space-y-2">
             <Label>Phone</Label>
             <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="09XXXXXXXXX" />
+          </div>
+
+          {/* ── Face Detection ── */}
+          <SectionHeader title="Face Detection" />
+          <div className="col-span-full flex items-start gap-4 rounded-lg border border-border p-4">
+            <div className="w-24 h-24 rounded-lg border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+              {form.profile_photo_url ? (
+                <img src={form.profile_photo_url} alt="Employee" className="w-full h-full object-cover" />
+              ) : (
+                <Camera className="w-8 h-8 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm">Enable Face Detection</div>
+                  <div className="text-xs text-muted-foreground">Require face verification at Time In / Time Out.</div>
+                </div>
+                <Switch
+                  checked={!!form.face_detection_enabled}
+                  onCheckedChange={(v) => setForm({ ...form, face_detection_enabled: v })}
+                  disabled={!form.face_descriptor}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading || registering}>
+                  {uploading || registering ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Camera className="w-4 h-4 mr-2" />}
+                  {form.profile_photo_url ? "Replace Photo" : "Upload Photo"}
+                </Button>
+                {form.face_descriptor ? (
+                  <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Face registered</span>
+                ) : form.profile_photo_url ? (
+                  <span className="text-xs text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> No face detected</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Upload a clear front-facing photo</span>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* ── Employment Details ── */}

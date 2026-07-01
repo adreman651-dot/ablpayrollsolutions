@@ -40,6 +40,9 @@ const emptyForm = {
   employment_status: "active", payroll_type: "monthly_rate",
   sss_schedule: "both", phic_schedule: "both", hdmf_schedule: "both",
   sss_contribution: 0, phic_contribution: 0, hdmf_contribution: 0,
+  profile_photo_url: undefined as string | undefined,
+  face_descriptor: null as number[] | null,
+  face_detection_enabled: false,
 };
 
 function payrollTypeLabel(type: string | null): string {
@@ -106,6 +109,9 @@ export default function Employees() {
         sss_contribution: form.sss_contribution || 0,
         phic_contribution: form.phic_contribution || 0,
         hdmf_contribution: form.hdmf_contribution || 0,
+        profile_photo_url: form.profile_photo_url || null,
+        face_descriptor: form.face_descriptor ?? null,
+        face_detection_enabled: !!form.face_detection_enabled,
       };
       if (editing) {
         const { error } = await supabase.from("employees").update(payload).eq("id", editing.id);
@@ -151,6 +157,9 @@ export default function Employees() {
       sss_contribution: emp.sss_contribution || 0,
       phic_contribution: emp.phic_contribution || 0,
       hdmf_contribution: emp.hdmf_contribution || 0,
+      profile_photo_url: emp.profile_photo_url || undefined,
+      face_descriptor: emp.face_descriptor ?? null,
+      face_detection_enabled: !!emp.face_detection_enabled,
     });
     setDialogOpen(true);
   };
@@ -189,8 +198,8 @@ export default function Employees() {
               <EmployeeFormDialog
                 open={dialogOpen}
                 onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null); }}
-                form={form}
-                setForm={setForm}
+                form={form as any}
+                setForm={setForm as any}
                 onSave={handleSave}
                 editing={!!editing}
                 emptyForm={emptyForm}

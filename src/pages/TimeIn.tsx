@@ -54,6 +54,10 @@ export default function TimeIn() {
   const [successInfo, setSuccessInfo] = useState<{ name: string; time: string; mode: Mode } | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [gpsStatus, setGpsStatus] = useState<string | null>(null);
+  const [empFaceEnabled, setEmpFaceEnabled] = useState(false);
+  const [empFaceDescriptor, setEmpFaceDescriptor] = useState<Float32Array | null>(null);
+  const [faceMatchPct, setFaceMatchPct] = useState<number | null>(null);
+  const [multipleFaces, setMultipleFaces] = useState(false);
 
   const detectionIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -108,7 +112,12 @@ export default function TimeIn() {
       try {
         const faceapi = (window as any).faceapi;
         if (faceapi) {
-          await faceapi.nets.tinyFaceDetector.loadFromUri("https://justadudewhohacks.github.io/face-api.js/models");
+          const MODELS = "https://justadudewhohacks.github.io/face-api.js/models";
+          await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODELS),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODELS),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODELS),
+          ]);
           setFaceApiLoaded(true);
         }
       } catch (e) {
@@ -176,12 +185,54 @@ export default function TimeIn() {
 
     detectionIntervalRef.current = window.setInterval(async () => {
       if (!video || video.paused || video.ended) return;
-      const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions());
+      const options = new faceapi.TinyFaceDetectorOptions();
+
+      // If face verification is required for this employee, look for all faces + descriptor
+      if (empFaceEnabled && empFaceDescriptor) {
+        const results = await faceapi
+          .detectAllFaces(video, options)
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!results || results.length === 0) {
+          setFaceDetected(false); setMultipleFaces(false); setFaceMatchPct(null);
+          return;
+        }
+        if (results.length > 1) {
+          setMultipleFaces(true); setFaceDetected(false); setFaceMatchPct(null);
+          return;
+        }
+        setMultipleFaces(false);
+        const r = faceapi.resizeResults(results, { width: video.videoWidth, height: video.videoHeight })[0];
+        const b = r.detection.box;
+        // Euclidean distance -> match %
+        const desc: Float32Array = r.descriptor;
+        let dist = 0;
+        for (let i = 0; i < desc.length; i++) { const d = desc[i] - empFaceDescriptor[i]; dist += d * d; }
+        dist = Math.sqrt(dist);
+        // face-api distance: 0 (identical) - typical threshold 0.6. Convert to %.
+        const pct = Math.max(0, Math.min(100, (1 - dist / 0.6) * 100));
+        setFaceMatchPct(pct);
+        setFaceDetected(true);
+        if (ctx) {
+          ctx.strokeStyle = pct >= 85 ? "#00C853" : "#FF9800";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(b.x, b.y, b.width, b.height);
+          ctx.fillStyle = pct >= 85 ? "#00C853" : "#FF9800";
+          ctx.font = "16px sans-serif";
+          ctx.fillText(`Match: ${pct.toFixed(0)}%`, b.x, Math.max(16, b.y - 6));
+        }
+        return;
+      }
+
+      // No face verification – simple presence detection only
+      const detection = await faceapi.detectSingleFace(video, options);
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (detection) {
-          const r = faceapi.resizeResults(detection, displaySize);
+          const r = faceapi.resizeResults(detection, { width: video.videoWidth, height: video.videoHeight });
           const b = r.box;
           ctx.strokeStyle = "#00C853";
           ctx.lineWidth = 2;
@@ -198,7 +249,7 @@ export default function TimeIn() {
       const ctx = overlayCanvasRef.current?.getContext("2d");
       if (ctx && overlayCanvasRef.current) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
     };
-  }, [enableFaceGate, cameraReady, faceApiLoaded, phase]);
+  }, [enableFaceGate, cameraReady, faceApiLoaded, phase, empFaceEnabled, empFaceDescriptor]);
 
   // ─── Live TTS greeting while typing the employee code ────────────────────
   const lastSpokenCodeRef = useRef<string>("");
@@ -258,6 +309,7 @@ export default function TimeIn() {
   const resetKiosk = () => {
     setCode(""); setEmployeeName(""); setEmployeeId("");
     setEnableFaceGate(false); setFaceDetected(false); setMode(null);
+    setEmpFaceEnabled(false); setEmpFaceDescriptor(null); setFaceMatchPct(null); setMultipleFaces(false);
     if (detectionIntervalRef.current) { clearInterval(detectionIntervalRef.current); detectionIntervalRef.current = null; }
     const ctx = overlayCanvasRef.current?.getContext("2d");
     if (ctx && overlayCanvasRef.current) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
@@ -311,9 +363,26 @@ export default function TimeIn() {
     // We no longer auto-set the mode. Let the user choose via the buttons.
     setMode(null);
 
+    // Fetch face verification data for this employee
+    try {
+      const { data: faceData } = await supabase.rpc("kiosk_get_face_data", { _employee_id: employee.id });
+      const fd = faceData as any;
+      const enabled = !!fd?.face_detection_enabled;
+      const desc = fd?.face_descriptor;
+      setEmpFaceEnabled(enabled);
+      if (enabled && Array.isArray(desc) && desc.length > 0) {
+        setEmpFaceDescriptor(new Float32Array(desc));
+      } else if (enabled) {
+        toast.error("Face detection enabled but no registered face on file.");
+        setEmpFaceEnabled(false);
+      }
+    } catch (e) {
+      console.warn("Face data fetch failed", e);
+    }
+
     // Make sure voices are loaded by calling getVoices once before speaking
     if ("speechSynthesis" in window) window.speechSynthesis.getVoices();
-    
+
     speakAnnouncement("greeting", fullName, padded);
     setEnableFaceGate(true);
     setSubmitting(false);
@@ -431,6 +500,23 @@ export default function TimeIn() {
   // ─── Submit punch ─────────────────────────────────────────────────────────
   const submitPunch = async (selectedMode: Mode) => {
     if (!faceDetected || !employeeId) return;
+
+    // Enforce face verification (85% match required)
+    if (empFaceEnabled) {
+      if (multipleFaces) {
+        toast.error("Only one face is allowed in frame.");
+        playErrorBeep(); triggerShake();
+        return;
+      }
+      if (faceMatchPct === null || faceMatchPct < 85) {
+        toast.error(`Face verification failed${faceMatchPct !== null ? ` (${faceMatchPct.toFixed(0)}%)` : ""}. Attendance rejected.`);
+        const { playVoice } = await import("@/lib/voiceService");
+        playVoice("Face verification failed. Attendance rejected.", undefined, "voice_error_enabled");
+        playErrorBeep(); triggerShake();
+        return;
+      }
+    }
+
     setSubmitting(true);
     setMode(selectedMode);
 
@@ -466,8 +552,11 @@ export default function TimeIn() {
         _employee_code: employeeCodeStr,
         _employee_name: employeeName,
         _device_type: deviceType,
-        _device_timestamp: deviceTimestamp
-      });
+        _device_timestamp: deviceTimestamp,
+        _face_verified: empFaceEnabled ? (faceMatchPct !== null && faceMatchPct >= 85) : null,
+        _face_match_percentage: faceMatchPct,
+        _face_detection_enabled: empFaceEnabled,
+      } as any);
 
       if (error) throw error;
       const res = data as any;
@@ -621,37 +710,51 @@ export default function TimeIn() {
             ) : (
               <div className="flex flex-col items-center gap-5 pointer-events-auto">
                 {/* Face status hint */}
-                <div className="text-white/70 text-sm tracking-widest uppercase">
-                  {faceDetected ? "✓ Face Detected — Ready" : "Align face in frame…"}
+                <div className="text-white/80 text-sm tracking-widest uppercase text-center">
+                  {multipleFaces
+                    ? "⚠ Only one face allowed"
+                    : empFaceEnabled
+                      ? (faceMatchPct === null
+                          ? "Align face in frame…"
+                          : faceMatchPct >= 85
+                            ? `✓ Verified — Match ${faceMatchPct.toFixed(0)}%`
+                            : `✗ Not matched — ${faceMatchPct.toFixed(0)}% (need 85%)`)
+                      : (faceDetected ? "✓ Face Detected — Ready" : "Align face in frame…")}
                 </div>
 
                 <div className="flex gap-4">
-                  {/* Show only TIME IN button if routeMode is 'in', only TIME OUT if 'out', both if no route mode */}
-                  {(!routeMode || routeMode === "in") && (
-                    <button
-                      onClick={() => submitPunch("in")}
-                      disabled={!faceDetected || submitting}
-                      className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
-                        ${faceDetected && !submitting
-                          ? "bg-[#00C853] hover:bg-[#00E676] active:scale-95"
-                          : "bg-[#00C853]/40 cursor-not-allowed opacity-50"}`}
-                    >
-                      {submitting ? "..." : "TIME IN"}
-                    </button>
-                  )}
-                  {(!routeMode || routeMode === "out") && (
-                    <button
-                      onClick={() => submitPunch("out")}
-                      disabled={!faceDetected || submitting}
-                      className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
-                        ${faceDetected && !submitting
-                          ? "bg-[#D50000] hover:bg-[#FF1744] active:scale-95"
-                          : "bg-[#D50000]/40 cursor-not-allowed opacity-50"}`}
-                    >
-                      {submitting ? "..." : "TIME OUT"}
-                    </button>
-                  )}
+                  {(() => {
+                    const verified = !empFaceEnabled || (!multipleFaces && faceMatchPct !== null && faceMatchPct >= 85);
+                    const ready = faceDetected && verified && !submitting;
+                    return <>
+                      {(!routeMode || routeMode === "in") && (
+                        <button
+                          onClick={() => submitPunch("in")}
+                          disabled={!ready}
+                          className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                            ${ready
+                              ? "bg-[#00C853] hover:bg-[#00E676] active:scale-95"
+                              : "bg-[#00C853]/40 cursor-not-allowed opacity-50"}`}
+                        >
+                          {submitting ? "..." : "TIME IN"}
+                        </button>
+                      )}
+                      {(!routeMode || routeMode === "out") && (
+                        <button
+                          onClick={() => submitPunch("out")}
+                          disabled={!ready}
+                          className={`px-8 py-5 rounded-full text-xl font-bold tracking-widest text-white shadow-2xl transition-all
+                            ${ready
+                              ? "bg-[#D50000] hover:bg-[#FF1744] active:scale-95"
+                              : "bg-[#D50000]/40 cursor-not-allowed opacity-50"}`}
+                        >
+                          {submitting ? "..." : "TIME OUT"}
+                        </button>
+                      )}
+                    </>;
+                  })()}
                 </div>
+
 
                 <button
                   onClick={resetKiosk}
