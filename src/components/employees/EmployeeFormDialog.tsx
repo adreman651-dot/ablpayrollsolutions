@@ -157,6 +157,51 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
             <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="09XXXXXXXXX" />
           </div>
 
+          {/* ── Face Detection ── */}
+          <SectionHeader title="Face Detection" />
+          <div className="col-span-full flex items-start gap-4 rounded-lg border border-border p-4">
+            <div className="w-24 h-24 rounded-lg border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+              {form.profile_photo_url ? (
+                <img src={form.profile_photo_url} alt="Employee" className="w-full h-full object-cover" />
+              ) : (
+                <Camera className="w-8 h-8 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex-1 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm">Enable Face Detection</div>
+                  <div className="text-xs text-muted-foreground">Require face verification at Time In / Time Out.</div>
+                </div>
+                <Switch
+                  checked={!!form.face_detection_enabled}
+                  onCheckedChange={(v) => setForm({ ...form, face_detection_enabled: v })}
+                  disabled={!form.face_descriptor}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading || registering}>
+                  {uploading || registering ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Camera className="w-4 h-4 mr-2" />}
+                  {form.profile_photo_url ? "Replace Photo" : "Upload Photo"}
+                </Button>
+                {form.face_descriptor ? (
+                  <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Face registered</span>
+                ) : form.profile_photo_url ? (
+                  <span className="text-xs text-amber-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> No face detected</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Upload a clear front-facing photo</span>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* ── Employment Details ── */}
           <SectionHeader title="Employment Details" />
           <div className="space-y-2">
