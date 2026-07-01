@@ -109,6 +109,9 @@ export default function Employees() {
         sss_contribution: form.sss_contribution || 0,
         phic_contribution: form.phic_contribution || 0,
         hdmf_contribution: form.hdmf_contribution || 0,
+        profile_photo_url: form.profile_photo_url || null,
+        face_descriptor: form.face_descriptor ?? null,
+        face_detection_enabled: !!form.face_detection_enabled,
       };
       if (editing) {
         const { error } = await supabase.from("employees").update(payload).eq("id", editing.id);
