@@ -500,6 +500,23 @@ export default function TimeIn() {
   // ─── Submit punch ─────────────────────────────────────────────────────────
   const submitPunch = async (selectedMode: Mode) => {
     if (!faceDetected || !employeeId) return;
+
+    // Enforce face verification (85% match required)
+    if (empFaceEnabled) {
+      if (multipleFaces) {
+        toast.error("Only one face is allowed in frame.");
+        playErrorBeep(); triggerShake();
+        return;
+      }
+      if (faceMatchPct === null || faceMatchPct < 85) {
+        toast.error(`Face verification failed${faceMatchPct !== null ? ` (${faceMatchPct.toFixed(0)}%)` : ""}. Attendance rejected.`);
+        const { playVoice } = await import("@/lib/voiceService");
+        playVoice("Face verification failed. Attendance rejected.", undefined, "voice_error_enabled");
+        playErrorBeep(); triggerShake();
+        return;
+      }
+    }
+
     setSubmitting(true);
     setMode(selectedMode);
 
@@ -535,8 +552,11 @@ export default function TimeIn() {
         _employee_code: employeeCodeStr,
         _employee_name: employeeName,
         _device_type: deviceType,
-        _device_timestamp: deviceTimestamp
-      });
+        _device_timestamp: deviceTimestamp,
+        _face_verified: empFaceEnabled ? (faceMatchPct !== null && faceMatchPct >= 85) : null,
+        _face_match_percentage: faceMatchPct,
+        _face_detection_enabled: empFaceEnabled,
+      } as any);
 
       if (error) throw error;
       const res = data as any;
