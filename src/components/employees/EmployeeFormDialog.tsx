@@ -82,12 +82,6 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, onSave, editing, emptyForm }: Props) {
   const payrollTypeLabel = PAYROLL_TYPES.find(p => p.value === form.payroll_type)?.label || "Monthly Rate";
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setForm(emptyForm); }}>
-      {!editing && (
-export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, onSave, editing, emptyForm }: Props) {
-  const payrollTypeLabel = PAYROLL_TYPES.find(p => p.value === form.payroll_type)?.label || "Monthly Rate";
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -102,7 +96,6 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
       const { data } = supabase.storage.from("employee-photos").getPublicUrl(fname);
       const photoUrl = data.publicUrl;
 
-      // Compute face descriptor from uploaded image
       setRegistering(true);
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -130,7 +123,6 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
         <DialogTrigger asChild>
           <Button><Plus className="w-4 h-4 mr-2" />Add Employee</Button>
         </DialogTrigger>
-      )}
       )}
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
