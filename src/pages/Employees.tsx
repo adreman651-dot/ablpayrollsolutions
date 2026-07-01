@@ -198,8 +198,8 @@ export default function Employees() {
               <EmployeeFormDialog
                 open={dialogOpen}
                 onOpenChange={(o) => { setDialogOpen(o); if (!o) setEditing(null); }}
-                form={form}
-                setForm={setForm}
+                form={form as any}
+                setForm={setForm as any}
                 onSave={handleSave}
                 editing={!!editing}
                 emptyForm={emptyForm}
