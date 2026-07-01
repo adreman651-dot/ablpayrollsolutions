@@ -1,10 +1,15 @@
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, Camera, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { computeDescriptorFromImage, descriptorToArray } from "@/lib/faceApi";
+import { toast } from "sonner";
 
 interface EmployeeFormData {
   first_name: string;
@@ -29,6 +34,9 @@ interface EmployeeFormData {
   sss_contribution: number;
   phic_contribution: number;
   hdmf_contribution: number;
+  profile_photo_url?: string;
+  face_descriptor?: number[] | null;
+  face_detection_enabled?: boolean;
 }
 
 interface Props {
