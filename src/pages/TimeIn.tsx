@@ -268,7 +268,7 @@ export default function TimeIn() {
       const { playVoice } = await import("@/lib/voiceService");
       const action = mode === "out" ? "ready to time out" : "ready to time in";
       playVoice(`Hello ${firstName}, ${action}.`, undefined, "voice_welcome_enabled");
-    }, 450);
+    }, 150);
     return () => clearTimeout(handle);
   }, [code, mode, enableFaceGate, phase]);
 
