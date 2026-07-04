@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Settings } from "lucide-react";
+import ablLogo from "@/assets/abl-logo.png.asset.json";
 
 export default function Landing() {
   const navigate = useNavigate();
