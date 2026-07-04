@@ -1,5 +1,5 @@
 import { Outlet, useLocation, Link } from "react-router-dom";
-import { Bell, Search, LayoutDashboard, Users, Clock, DollarSign, CalendarDays, Landmark, FileText, Receipt, Settings, LogOut, AlertTriangle } from "lucide-react";
+import { Bell, Search, LayoutDashboard, Users, Clock, DollarSign, CalendarDays, Landmark, FileText, Receipt, Settings, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { SyncButton } from "@/components/SyncButton";
