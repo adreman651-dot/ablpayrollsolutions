@@ -1,9 +1,10 @@
 apply plugin: 'com.android.application'
 
-// Load keystore signing properties
+// Load keystore signing properties (only if file exists - not required in CI)
 def keystorePropertiesFile = rootProject.file("app/keystore.properties")
 def keystoreProperties = new Properties()
-if (keystorePropertiesFile.exists()) {
+def hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
@@ -24,16 +25,23 @@ android {
         }
     }
     signingConfigs {
-        release {
-            storeFile file(keystoreProperties['STORE_FILE'])
-            storePassword keystoreProperties['STORE_PASSWORD']
-            keyAlias keystoreProperties['KEY_ALIAS']
-            keyPassword keystoreProperties['KEY_PASSWORD']
+        if (hasKeystore) {
+            release {
+                storeFile file(keystoreProperties['STORE_FILE'])
+                storePassword keystoreProperties['STORE_PASSWORD']
+                keyAlias keystoreProperties['KEY_ALIAS']
+                keyPassword keystoreProperties['KEY_PASSWORD']
+            }
         }
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            // Use release signing only when keystore is available; otherwise fall back to debug signing
+            if (hasKeystore) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig signingConfigs.debug
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
