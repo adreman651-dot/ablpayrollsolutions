@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Glow (Shadow) effect approximated with semi-transparent larger circle -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#334FC3F7" />
+            <size android:width="30dp" android:height="30dp" />
+        </shape>
+    </item>
+    <item android:top="12dp" android:bottom="12dp" android:left="12dp" android:right="12dp">
+        <shape android:shape="oval">
+            <solid android:color="#FFFFFF" />
+            <size android:width="6dp" android:height="6dp" />
+        </shape>
+    </item>
+</layer-list>

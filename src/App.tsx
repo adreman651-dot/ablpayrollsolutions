@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import Landing from "./pages/Landing";
@@ -27,6 +27,10 @@ import NotFound from "./pages/NotFound";
 import { useState, useEffect } from "react";
 import type { ReactNode } from "react";
 import SplashScreen from "@/components/SplashScreen";
+import { ensureSyncStatusColumns } from "@/lib/offlineDb";
+import { SplashScreen as CapSplashScreen } from "@capacitor/splash-screen";
+import { Capacitor } from "@capacitor/core";
+import AppUpdateOverlay from "@/components/AppUpdateOverlay";
 
 const queryClient = new QueryClient();
 
@@ -37,20 +41,51 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function SplashGate() {
+function SplashGate({ dbReady }: { dbReady: boolean }) {
   const [show, setShow] = useState(() => !sessionStorage.getItem("abl_splash_shown"));
-  useEffect(() => { if (!show) sessionStorage.setItem("abl_splash_shown", "1"); }, [show]);
+  
+  useEffect(() => {
+    if (!show && dbReady) {
+      sessionStorage.setItem("abl_splash_shown", "1");
+      if (Capacitor.isNativePlatform()) {
+        CapSplashScreen.hide().catch(console.error);
+      }
+    }
+  }, [show, dbReady]);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("abl_splash_shown") && dbReady) {
+      if (Capacitor.isNativePlatform()) {
+        CapSplashScreen.hide().catch(console.error);
+      }
+    }
+  }, [dbReady]);
+
   if (!show) return null;
   return <SplashScreen onDone={() => setShow(false)} />;
 }
 
-const App = () => (
+const App = () => {
+  const [dbReady, setDbReady] = useState(false);
+
+  // Initialize database migrations on app load
+  useEffect(() => {
+    ensureSyncStatusColumns()
+      .then(() => setDbReady(true))
+      .catch(err => {
+        console.error("Migration failed:", err);
+        setDbReady(true);
+      });
+  }, []);
+
+  return (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <SplashGate />
-      <BrowserRouter>
+      <SplashGate dbReady={dbReady} />
+      <AppUpdateOverlay />
+      <HashRouter>
         <AuthProvider>
           <Routes>
             {/* Landing Page — always shown first, no auth required */}
@@ -87,9 +122,10 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
-      </BrowserRouter>
+      </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;

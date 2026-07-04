@@ -4,12 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { syncAllData, getSyncStatus } from '@/lib/syncEngine';
 import { toast } from 'sonner';
-import { RefreshCw, CheckCircle, AlertTriangle, Clock, History, FileText } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertTriangle, Clock, History, FileText, Upload, Download } from 'lucide-react';
 import { offlineQuery } from '@/lib/offlineDb';
 
 export default function SyncCenter() {
   const [syncing, setSyncing] = useState(false);
-  const [status, setStatus] = useState<any>({ lastSyncDate: null, status: 'idle', logs: [] });
+  const [status, setStatus] = useState<any>({ lastSyncDate: null, status: 'idle', logs: [], uploadedRecords: 0, downloadedRecords: 0, failedRecords: 0 });
   const [pendingCount, setPendingCount] = useState(0);
 
   const loadStatus = async () => {
@@ -99,6 +99,41 @@ export default function SyncCenter() {
               {status.status || 'IDLE'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Status of the last synchronization action</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium">Uploaded Records</CardTitle>
+            <Upload className="w-4 h-4 text-sky-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{status.uploadedRecords}</div>
+            <p className="text-xs text-muted-foreground mt-1">Successfully sent to Supabase</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium">Downloaded Records</CardTitle>
+            <Download className="w-4 h-4 text-emerald-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{status.downloadedRecords}</div>
+            <p className="text-xs text-muted-foreground mt-1">Pulled updates into local database</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+            <CardTitle className="text-sm font-medium">Failed Records</CardTitle>
+            <AlertTriangle className="w-4 h-4 text-rose-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{status.failedRecords}</div>
+            <p className="text-xs text-muted-foreground mt-1">Errors encountered during sync</p>
           </CardContent>
         </Card>
       </div>

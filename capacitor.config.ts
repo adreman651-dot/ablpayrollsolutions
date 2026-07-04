@@ -15,9 +15,10 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      launchShowDuration: 2000,
-      backgroundColor: '#1e1b4b',
-      showSpinner: true,
+      launchShowDuration: 0,
+      launchAutoHide: true,
+      backgroundColor: '#020617',
+      showSpinner: false,
       spinnerColor: '#818cf8',
     },
     CapacitorSQLite: {

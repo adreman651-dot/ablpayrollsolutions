@@ -22,3 +22,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Electron build output
+release/
+
+# Android build output
+android/app/build/
+
+# Keystore (never commit secrets)
+*.jks
+android/app/keystore.properties
+
+# Scripts / debug files
+scripts/
+test-phase1-connectivity.js
+verify-desktop-db.js
+generate_icons.py
+check-android-setup.bat

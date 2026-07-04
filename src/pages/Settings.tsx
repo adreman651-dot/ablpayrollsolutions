@@ -9,9 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle, Info, Volume2, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { Save, UserPlus, Download, Upload, Trash2, AlertTriangle, Info, Volume2, RefreshCw, Wifi, WifiOff, CheckCircle, Play, History, ShieldCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { syncAllData } from "@/lib/syncEngine";
+import { useAppUpdate } from "@/hooks/useAppUpdate";
+import { Progress } from "@/components/ui/progress";
+
 
 
 
@@ -43,6 +46,30 @@ const TRAIN_TAX_TABLE = [
 
 export default function Settings() {
   const { user } = useAuth();
+  const {
+    isSupported,
+    currentVersion,
+    currentBuild,
+    latestVersionInfo,
+    releaseNotes,
+    lastChecked,
+    checking,
+    connectionStatus,
+    githubStatus,
+    debugLog,
+    downloadProgress,
+    checkForUpdates,
+    checkConnectivity,
+    startDownload,
+    cancelDownload,
+    verifyAndInstall,
+    formatSpeed,
+    formatTime,
+    formatSize,
+  } = useAppUpdate();
+  const [showDebugLog, setShowDebugLog]     = useState(false);
+  const [updateChannel, setUpdateChannel]   = useState<string>("Production");
+  const [showNotesDialog, setShowNotesDialog] = useState(false);
   const [settings, setSettings] = useState<Setting[]>([]);
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -282,6 +309,7 @@ export default function Settings() {
           <TabsTrigger value="voice">Voice Settings</TabsTrigger>
           <TabsTrigger value="sync">Sync</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
+          <TabsTrigger value="updates">Application Updates</TabsTrigger>
         </TabsList>
 
         {/* ─── General Settings ─────────────────────────────────────── */}
@@ -703,6 +731,303 @@ export default function Settings() {
               </div>
             </div>
           </div>
+        </TabsContent>
+
+        {/* ─── Application Updates ───────────────────────────────────── */}
+        <TabsContent value="updates" className="mt-0">
+          <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="font-display font-semibold">Application Updates</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Manage OTA (Over-The-Air) self-updates for the Android application.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                  isSupported 
+                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400"
+                    : "bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
+                }`}>
+                  {isSupported ? "Android Native Supported" : "Simulated/Web Mode"}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+
+              {/* ── Connection Status Banner ─────────────────────────── */}
+              <div className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium border ${
+                connectionStatus === "online"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/20 dark:border-emerald-800 dark:text-emerald-300"
+                  : connectionStatus === "offline"
+                  ? "bg-red-50 border-red-200 text-red-800 dark:bg-red-950/20 dark:border-red-800 dark:text-red-300"
+                  : "bg-muted/40 border-border text-muted-foreground"
+              }`}>
+                <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                  connectionStatus === "online" ? "bg-emerald-500"
+                  : connectionStatus === "offline" ? "bg-red-500"
+                  : "bg-muted-foreground"
+                }`} />
+                <span className="flex-1">
+                  {connectionStatus === "online"
+                    ? "Internet Connected"
+                    : connectionStatus === "offline"
+                    ? "No Internet — connect to WiFi or mobile data"
+                    : "Connection status unknown"}
+                  <span className="ml-3 text-xs opacity-70">GitHub: {githubStatus}</span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs gap-1"
+                  onClick={() => checkConnectivity()}
+                >
+                  <RefreshCw className="w-3 h-3" /> Test
+                </Button>
+              </div>
+
+              {/* Version details grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 border rounded-xl bg-muted/10">
+                  <span className="text-xs text-muted-foreground block font-medium">Current Version</span>
+                  <span className="text-lg font-bold font-mono block mt-1">{currentVersion}</span>
+                </div>
+                <div className="p-4 border rounded-xl bg-muted/10">
+                  <span className="text-xs text-muted-foreground block font-medium">Latest Version</span>
+                  <span className="text-lg font-bold font-mono block mt-1 text-primary">
+                    {latestVersionInfo?.versionName || "Not Checked"}
+                  </span>
+                </div>
+                <div className="p-4 border rounded-xl bg-muted/10">
+                  <span className="text-xs text-muted-foreground block font-medium">Build Number</span>
+                  <span className="text-lg font-bold font-mono block mt-1">
+                    {currentBuild} / {latestVersionInfo?.versionCode || "—"}
+                  </span>
+                </div>
+                <div className="p-4 border rounded-xl bg-muted/10">
+                  <span className="text-xs text-muted-foreground block font-medium">Release Date</span>
+                  <span className="text-lg font-bold block mt-1 text-muted-foreground">
+                    {latestVersionInfo?.releaseDate || "—"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Extra details grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t pt-6">
+                <div className="flex flex-col gap-1">
+                  <Label className="text-sm font-semibold">Update Channel</Label>
+                  <Select value={updateChannel} onValueChange={setUpdateChannel}>
+                    <SelectTrigger className="w-full mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Production">Production (Recommended)</SelectItem>
+                      <SelectItem value="Beta">Beta (Testing)</SelectItem>
+                      <SelectItem value="Staging">Staging (Development)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1 justify-center">
+                  <span className="text-xs text-muted-foreground block font-medium font-semibold">APK Size</span>
+                  <span className="text-sm font-semibold block font-mono mt-1 text-foreground">
+                    {latestVersionInfo?.apkSize || (downloadProgress.totalBytes ? formatSize(downloadProgress.totalBytes) : "8.5 MB")}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1 justify-center">
+                  <span className="text-xs text-muted-foreground block font-medium font-semibold">Last Checked</span>
+                  <span className="text-sm font-semibold block mt-1 text-muted-foreground">
+                    {lastChecked || "Never"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Download Progress Bar Section */}
+              {downloadProgress.status === "downloading" && (
+                <div className="border border-primary/20 rounded-xl p-5 bg-primary/5 space-y-4">
+                  <div className="flex justify-between items-center text-sm font-semibold">
+                    <span className="flex items-center gap-2 text-primary animate-pulse">
+                      <Download className="w-4 h-4" /> Downloading Update...
+                    </span>
+                    <span>{Math.round(downloadProgress.progress * 100)}%</span>
+                  </div>
+                  <Progress value={downloadProgress.progress * 100} className="h-2" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-muted-foreground font-mono">
+                    <div>Downloaded: {formatSize(downloadProgress.bytesDownloaded)} / {formatSize(downloadProgress.totalBytes)}</div>
+                    <div>Speed: {formatSpeed(downloadProgress.speed)}</div>
+                    <div>Remaining: {formatTime(downloadProgress.timeRemaining)}</div>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <Button size="sm" variant="outline" onClick={cancelDownload} className="text-destructive border-destructive hover:bg-destructive/10">
+                      Cancel Download
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons Section */}
+              <div className="flex flex-wrap gap-3 border-t pt-6">
+                <Button onClick={() => checkForUpdates(false)} disabled={checking} className="gap-2">
+                  <RefreshCw className={`w-4 h-4 ${checking ? "animate-spin" : ""}`} />
+                  {checking ? "Checking…" : "Check for Updates"}
+                </Button>
+
+                <Button 
+                  onClick={startDownload} 
+                  disabled={!latestVersionInfo || downloadProgress.status === "downloading"} 
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  <Play className="w-4 h-4" />
+                  Update Now
+                </Button>
+
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    if (releaseNotes) {
+                      setShowNotesDialog(true);
+                    } else if (latestVersionInfo) {
+                      toast.promise(checkForUpdates(true), {
+                        loading: "Loading release notes...",
+                        success: () => {
+                          setShowNotesDialog(true);
+                          return "Release notes loaded!";
+                        },
+                        error: "Failed to load release notes."
+                      });
+                    } else {
+                      toast.info("Please check for updates first.");
+                    }
+                  }}
+                  className="gap-2"
+                >
+                  <History className="w-4 h-4" />
+                  View Release Notes
+                </Button>
+
+                <Button 
+                  variant="outline" 
+                  onClick={async () => {
+                    if (!latestVersionInfo) {
+                      toast.info("Checking for updates first...");
+                      const res = await checkForUpdates(true);
+                      if (!res) return;
+                    }
+                    toast.info("Downloading APK to device storage...");
+                    startDownload();
+                  }}
+                  disabled={downloadProgress.status === "downloading"}
+                  className="gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Download APK
+                </Button>
+
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    if (downloadProgress.filePath) {
+                      verifyAndInstall(downloadProgress.filePath);
+                    } else {
+                      toast.error("No downloaded APK found. Please download the update first.");
+                    }
+                  }}
+                  className="gap-2 border-emerald-500/30 hover:bg-emerald-500/10"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Install APK
+                </Button>
+
+                <Button 
+                  variant="ghost" 
+                  onClick={() => {
+                    toast.info(`Build Number Check:\nInstalled Build: ${currentBuild}\nLatest Released Build: ${latestVersionInfo?.versionCode || "Not checked"}`, {
+                      duration: 5000
+                    });
+                  }}
+                  className="gap-2 text-muted-foreground"
+                >
+                  <Info className="w-4 h-4" />
+                  Check Build Number
+                </Button>
+              </div>
+
+              {/* ── Debug Log ────────────────────────────────────────── */}
+              <div className="border rounded-xl overflow-hidden">
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold bg-muted/30 hover:bg-muted/50 transition-colors"
+                  onClick={() => setShowDebugLog(v => !v)}
+                >
+                  <span className="flex items-center gap-2">
+                    <Info className="w-4 h-4 text-muted-foreground" />
+                    Network Debug Log
+                    <span className="text-xs text-muted-foreground font-normal">({debugLog.length} entries)</span>
+                  </span>
+                  <span className="text-muted-foreground text-xs">{showDebugLog ? "▲ Hide" : "▼ Show"}</span>
+                </button>
+                {showDebugLog && (
+                  <div className="bg-black/90 text-green-400 font-mono text-xs p-4 max-h-64 overflow-y-auto space-y-0.5">
+                    {debugLog.length === 0 ? (
+                      <p className="text-muted-foreground italic">No log entries yet. Tap "Check for Updates" to begin.</p>
+                    ) : (
+                      debugLog.map((line, i) => (
+                        <div key={i} className={`leading-relaxed ${
+                          line.includes("✗") || line.includes("FAIL") || line.includes("error")
+                            ? "text-red-400"
+                            : line.includes("✓")
+                            ? "text-green-400"
+                            : line.includes("⚠")
+                            ? "text-yellow-400"
+                            : "text-green-300"
+                        }`}>{line}</div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+
+          {/* Release Notes Dialog */}
+          <Dialog open={showNotesDialog} onOpenChange={setShowNotesDialog}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 font-display">
+                  <History className="w-5 h-5 text-primary" />
+                  Release Notes — Version {latestVersionInfo?.versionName}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="flex justify-between items-center text-xs text-muted-foreground border-b pb-2">
+                  <span>Released: {latestVersionInfo?.releaseDate}</span>
+                  <span>Build Number: {latestVersionInfo?.versionCode}</span>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold">What's New in this Version:</h4>
+                  {releaseNotes && releaseNotes.changes && releaseNotes.changes.length > 0 ? (
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-foreground/90">
+                      {releaseNotes.changes.map((change, i) => (
+                        <li key={i}>{change}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <ul className="list-disc pl-5 space-y-1 text-sm text-foreground/90">
+                      <li>Payroll improvements</li>
+                      <li>Attendance improvements</li>
+                      <li>Bug fixes</li>
+                      <li>Performance optimization</li>
+                    </ul>
+                  )}
+                </div>
+                <div className="flex justify-end pt-4 gap-2 border-t">
+                  <Button variant="outline" onClick={() => setShowNotesDialog(false)}>Close</Button>
+                  <Button onClick={() => {
+                    setShowNotesDialog(false);
+                    startDownload();
+                  }} className="bg-emerald-600 hover:bg-emerald-700 text-white">Update Now</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
       </Tabs>
     </div>

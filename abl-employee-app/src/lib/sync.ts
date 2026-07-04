@@ -1,7 +1,9 @@
 import { Network } from '@capacitor/network';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { supabase } from './supabase';
-import { getPendingRecords, markAsSynced } from './db';
+import { getPendingRecords, markAsSynced, offlineExecute } from './db';
+import { syncAllData } from './syncEngine';
+import { Capacitor } from '@capacitor/core';
 
 let isSyncing = false;
 
@@ -69,35 +71,62 @@ const triggerSync = async (): Promise<{ uploaded: number; failed: number; messag
           }
         }
 
-        // Call kiosk_punch_v2 RPC to insert attendance into Supabase
-        const { error: insertErr } = await supabase.rpc('kiosk_punch_v2', {
-          _employee_code: record.employee_code,
-          _employee_id: record.employee_id,
-          _employee_name: record.employee_name,
-          _mode: record.attendance_type,
-          _latitude: record.latitude ? Number(record.latitude) : null,
-          _longitude: record.longitude ? Number(record.longitude) : null,
-          _photo_url: photoUrl,
-          _address: null,
-          _device_type: 'android_kiosk_offline',
-          _device_timestamp:
-            record.attendance_type === 'in' ? record.time_in : record.time_out,
-        });
-
-        if (insertErr) {
-          // If already exists (already timed in/out), mark as synced to avoid retries
-          if (
-            insertErr.message?.toLowerCase().includes('already timed') ||
-            insertErr.message?.toLowerCase().includes('duplicate')
-          ) {
-            await markAsSynced(record.id);
-          } else {
-            console.error('[Sync] Insert error:', insertErr.message);
-            failed++;
+        // Reverse-geocode location if available
+        let locationLabel: string | null = null;
+        if (record.latitude && record.longitude) {
+          try {
+            const lat = Number(record.latitude);
+            const lng = Number(record.longitude);
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`
+            );
+            const data = await response.json();
+            const address = data.address || {};
+            const parts = [
+              address.road || address.street,
+              address.suburb || address.neighbourhood,
+              address.city || address.town || address.municipality,
+              address.province || address.county,
+            ].filter(Boolean);
+            locationLabel = parts.join(', ') || null;
+          } catch (geoErr) {
+            console.warn('[Sync] Reverse geocode failed:', geoErr);
           }
-        } else {
+        }
+
+        // Prepare attendance row compatible with Desktop schema and insert into local `attendance` table
+        try {
+          const generatedId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) ? (crypto as any).randomUUID() : `local-${Date.now()}-${record.id}`;
+          const attendanceRow = {
+            id: generatedId,
+            employee_id: record.employee_id,
+            employee_code: record.employee_code,
+            employee_name: record.employee_name,
+            date: record.attendance_date,
+            time_in: record.time_in || null,
+            time_out: record.time_out || null,
+            selfie_url: photoUrl,
+            latitude: record.latitude ? Number(record.latitude) : null,
+            longitude: record.longitude ? Number(record.longitude) : null,
+            location_label_in: record.attendance_type === 'in' ? locationLabel : null,
+            location_label_out: record.attendance_type === 'out' ? locationLabel : null,
+            device_type: 'android_kiosk_offline',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            sync_status: 'pending'
+          };
+
+          const keys = Object.keys(attendanceRow);
+          const placeholders = keys.map(() => '?').join(',');
+          const sql = `INSERT OR REPLACE INTO attendance (${keys.join(',')}) VALUES (${placeholders})`;
+          await offlineExecute(sql, keys.map(k => (attendanceRow as any)[k]));
+
+          // mark original attendance_records entry as synced to avoid duplicate local processing
           await markAsSynced(record.id);
           uploaded++;
+        } catch (localInsertErr) {
+          console.error('[Sync] Failed inserting local attendance row:', localInsertErr);
+          failed++;
         }
       } catch (recordErr) {
         console.error(`[Sync] Failed record id=${record.id}:`, recordErr);
@@ -105,10 +134,12 @@ const triggerSync = async (): Promise<{ uploaded: number; failed: number; messag
       }
     }
 
+    // Trigger full sync engine to sync all tables bidirectionally
+    const syncResult = await syncAllData();
     return {
       uploaded,
-      failed,
-      message: `Synced ${uploaded} records${failed > 0 ? `, ${failed} failed` : ''}`,
+      failed: failed + (syncResult.success ? 0 : 1),
+      message: `Local uploads: ${uploaded}. Sync engine: ${syncResult.details}`,
     };
   } catch (err: any) {
     console.error('[Sync] Process failed:', err);

@@ -46,127 +46,167 @@ function initDatabase() {
       employee_code TEXT UNIQUE,
       first_name TEXT,
       last_name TEXT,
+      middle_name TEXT,
       email TEXT,
       phone TEXT,
       department TEXT,
-      position TEXT,
-      daily_rate REAL,
-      monthly_rate REAL,
-      sss_no TEXT,
-      phic_no TEXT,
-      hdmf_no TEXT,
-      tin TEXT,
-      status TEXT DEFAULT 'active',
+      job_title TEXT,
+      basic_salary REAL DEFAULT 0,
       hire_date TEXT,
-      employment_type TEXT DEFAULT 'regular',
+      employment_status TEXT DEFAULT 'active',
+      sss_number TEXT,
+      philhealth_number TEXT,
+      pagibig_number TEXT,
+      tin_number TEXT,
+      payroll_type TEXT DEFAULT 'monthly_rate',
+      sss_schedule TEXT DEFAULT 'both',
+      phic_schedule TEXT DEFAULT 'both',
+      hdmf_schedule TEXT DEFAULT 'both',
+      sss_contribution REAL DEFAULT 0,
+      phic_contribution REAL DEFAULT 0,
+      hdmf_contribution REAL DEFAULT 0,
+      address TEXT,
+      birthdate TEXT,
+      leave_credits REAL DEFAULT 0,
+      profile_photo_url TEXT,
       created_at TEXT,
-      updated_at TEXT
+      updated_at TEXT,
+      sync_status TEXT DEFAULT 'synced'
     );
 
     CREATE TABLE IF NOT EXISTS attendance (
       id TEXT PRIMARY KEY,
       employee_id TEXT,
-      employee_name TEXT,
-      employee_code TEXT,
-      attendance_date TEXT,
-      attendance_type TEXT,
+      date TEXT,
       time_in TEXT,
       time_out TEXT,
-      selfie_image_path TEXT,
+      photo_in_url TEXT,
+      photo_out_url TEXT,
+      selfie_url TEXT,
       latitude REAL,
       longitude REAL,
-      exact_address TEXT,
-      hours_worked REAL DEFAULT 0,
-      is_overtime INTEGER DEFAULT 0,
-      overtime_hours REAL DEFAULT 0,
-      sync_status TEXT DEFAULT 'pending',
+      latitude_in REAL,
+      longitude_in REAL,
+      latitude_out REAL,
+      longitude_out REAL,
+      location_label_in TEXT,
+      location_label_out TEXT,
+      total_hours REAL DEFAULT 0,
+      total_hours_worked REAL DEFAULT 0,
+      late_minutes REAL DEFAULT 0,
+      overtime_minutes REAL DEFAULT 0,
+      undertime_minutes REAL DEFAULT 0,
+      notes TEXT,
+      status TEXT,
       created_at TEXT,
-      updated_at TEXT,
+      sync_status TEXT DEFAULT 'pending',
       FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS leave_types (
+      id TEXT PRIMARY KEY,
+      name TEXT UNIQUE,
+      description TEXT,
+      credits_per_year REAL DEFAULT 0,
+      created_at TEXT,
+      sync_status TEXT DEFAULT 'synced'
     );
 
     CREATE TABLE IF NOT EXISTS leaves (
       id TEXT PRIMARY KEY,
       employee_id TEXT,
-      leave_type TEXT,
+      leave_type_id TEXT,
       start_date TEXT,
       end_date TEXT,
-      days_count REAL DEFAULT 1,
+      duration REAL DEFAULT 1,
       status TEXT DEFAULT 'pending',
       reason TEXT,
       approved_by TEXT,
-      approved_at TEXT,
       created_at TEXT,
       updated_at TEXT,
-      FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE
+      sync_status TEXT DEFAULT 'synced',
+      FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+      FOREIGN KEY(leave_type_id) REFERENCES leave_types(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS loans (
       id TEXT PRIMARY KEY,
       employee_id TEXT,
       loan_type TEXT,
-      amount REAL,
-      monthly_amortization REAL,
-      balance REAL,
+      principal_amount REAL DEFAULT 0,
+      monthly_amortization REAL DEFAULT 0,
+      per_cutoff_amortization REAL DEFAULT 0,
+      remaining_balance REAL DEFAULT 0,
       total_paid REAL DEFAULT 0,
       status TEXT DEFAULT 'active',
       start_date TEXT,
+      approved_by TEXT,
       created_at TEXT,
       updated_at TEXT,
+      sync_status TEXT DEFAULT 'synced',
       FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS loan_payments (
+      id TEXT PRIMARY KEY,
+      loan_id TEXT,
+      amount REAL DEFAULT 0,
+      payment_date TEXT,
+      payroll_run_id TEXT,
+      created_at TEXT,
+      sync_status TEXT DEFAULT 'synced',
+      FOREIGN KEY(loan_id) REFERENCES loans(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS payroll_runs (
       id TEXT PRIMARY KEY,
       period_start TEXT,
       period_end TEXT,
-      pay_date TEXT,
-      payroll_type TEXT DEFAULT 'semi-monthly',
+      run_date TEXT,
+      cutoff_type TEXT DEFAULT 'semi-monthly',
       status TEXT DEFAULT 'draft',
       notes TEXT,
       created_by TEXT,
       created_at TEXT,
-      updated_at TEXT
+      updated_at TEXT,
+      sync_status TEXT DEFAULT 'synced'
     );
 
     CREATE TABLE IF NOT EXISTS payroll_items (
       id TEXT PRIMARY KEY,
       payroll_run_id TEXT,
       employee_id TEXT,
-      days_worked REAL,
-      hours_worked REAL DEFAULT 0,
       basic_pay REAL DEFAULT 0,
-      overtime_pay REAL DEFAULT 0,
-      holiday_pay REAL DEFAULT 0,
       allowances REAL DEFAULT 0,
-      gross_pay REAL,
-      sss_deduction REAL DEFAULT 0,
-      phic_deduction REAL DEFAULT 0,
-      hdmf_deduction REAL DEFAULT 0,
-      tax_deduction REAL DEFAULT 0,
-      loan_deduction REAL DEFAULT 0,
+      gross_pay REAL DEFAULT 0,
+      sss_contribution REAL DEFAULT 0,
+      philhealth_contribution REAL DEFAULT 0,
+      pagibig_contribution REAL DEFAULT 0,
+      withholding_tax REAL DEFAULT 0,
+      loan_deductions REAL DEFAULT 0,
       cash_advance REAL DEFAULT 0,
       other_deductions REAL DEFAULT 0,
-      net_pay REAL,
+      total_deductions REAL DEFAULT 0,
+      absence_deductions REAL DEFAULT 0,
+      late_deductions REAL DEFAULT 0,
+      overtime_pay REAL DEFAULT 0,
+      holiday_pay REAL DEFAULT 0,
+      net_pay REAL DEFAULT 0,
       created_at TEXT,
-      updated_at TEXT,
+      sync_status TEXT DEFAULT 'synced',
       FOREIGN KEY(payroll_run_id) REFERENCES payroll_runs(id) ON DELETE CASCADE,
       FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS government_contributions (
+    CREATE TABLE IF NOT EXISTS profiles (
       id TEXT PRIMARY KEY,
+      full_name TEXT,
+      avatar_url TEXT,
       employee_id TEXT,
-      contribution_type TEXT,
-      month TEXT,
-      year INTEGER,
-      employee_share REAL DEFAULT 0,
-      employer_share REAL DEFAULT 0,
-      total REAL DEFAULT 0,
-      status TEXT DEFAULT 'pending',
       created_at TEXT,
       updated_at TEXT,
-      FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE
+      sync_status TEXT DEFAULT 'synced',
+      FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS system_settings (
@@ -174,8 +214,15 @@ function initDatabase() {
       key TEXT UNIQUE,
       value TEXT,
       description TEXT,
-      created_at TEXT,
-      updated_at TEXT
+      updated_at TEXT,
+      sync_status TEXT DEFAULT 'synced'
+    );
+
+    CREATE TABLE IF NOT EXISTS user_roles (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      role TEXT,
+      sync_status TEXT DEFAULT 'synced'
     );
 
     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -194,10 +241,64 @@ function initDatabase() {
       direction TEXT,
       status TEXT,
       records_synced INTEGER DEFAULT 0,
+      uploaded_records INTEGER DEFAULT 0,
+      downloaded_records INTEGER DEFAULT 0,
+      failed_records INTEGER DEFAULT 0,
+      last_sync_date TEXT,
       details TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  const ensureColumnExists = (table, column, definition) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    if (!cols.includes(column)) {
+      db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+    }
+  };
+
+  const syncTables = [
+    'employees',
+    'attendance',
+    'leave_types',
+    'leaves',
+    'loans',
+    'loan_payments',
+    'payroll_runs',
+    'payroll_items',
+    'profiles',
+    'system_settings',
+    'user_roles'
+  ];
+
+  for (const table of syncTables) {
+    ensureColumnExists(table, 'sync_status', "TEXT DEFAULT 'synced'");
+    ensureColumnExists(table, 'updated_at', 'TEXT');
+    ensureColumnExists(table, 'synced_at', 'TEXT');
+  }
+
+  // Seed default settings and system settings if empty
+  const settingsCount = db.prepare("SELECT COUNT(*) as count FROM system_settings").get().count;
+  if (settingsCount === 0) {
+    const seedSettings = [
+      { id: '1', key: 'pagibig_employee', value: '400', description: 'Pag-IBIG Employee Contribution Share' },
+      { id: '2', key: 'pagibig_employer', value: '400', description: 'Pag-IBIG Employer Contribution Share' },
+      { id: '3', key: 'sss_contribution_rate', value: '0.045', description: 'SSS Employee Contribution rate' },
+      { id: '4', key: 'phic_contribution_rate', value: '0.025', description: 'PhilHealth Employee Contribution rate' }
+    ];
+    const insertSetting = db.prepare("INSERT INTO system_settings (id, key, value, description, updated_at) VALUES (?, ?, ?, ?, ?)");
+    for (const s of seedSettings) {
+      insertSetting.run(s.id, s.key, s.value, s.description, new Date().toISOString());
+    }
+  }
+
+  // Seed user roles and profiles for admin fallback
+  const rolesCount = db.prepare("SELECT COUNT(*) as count FROM user_roles").get().count;
+  if (rolesCount === 0) {
+    db.prepare("INSERT INTO user_roles (id, user_id, role) VALUES (?, ?, ?)").run("1", "offline-admin-id", "admin");
+    db.prepare("INSERT INTO profiles (id, full_name, employee_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .run("offline-admin-id", "Offline Admin", "offline-admin-employee-id", new Date().toISOString(), new Date().toISOString());
+  }
 }
 
 function createWindow() {

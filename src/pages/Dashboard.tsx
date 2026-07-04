@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Clock, AlertTriangle, UserX, Landmark, DollarSign, TrendingDown, TrendingUp, ClipboardList, Sparkles } from "lucide-react";
+import { Users, Clock, AlertTriangle, UserX, Landmark, DollarSign, TrendingDown, TrendingUp, ClipboardList, Sparkles, Server, ShieldCheck, Activity, RefreshCw } from "lucide-react";
+import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { formatCurrency } from "@/lib/payroll-utils";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -25,6 +26,16 @@ interface DashboardStats {
 const PIE_COLORS = { present: "#10B981", late: "#F59E0B", absent: "#F43F5E", perfect: "#A855F7" };
 
 export default function Dashboard() {
+  const {
+    currentVersion,
+    currentBuild,
+    latestVersionInfo,
+    checkForUpdates,
+  } = useAppUpdate();
+
+  const [dbOnline, setDbOnline] = useState<boolean>(true);
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== "undefined" ? navigator.onLine : true);
+
   const [stats, setStats] = useState<DashboardStats>({
     totalEmployees: 0, presentToday: 0, lateToday: 0, absentToday: 0,
     activeLoans: 0, perfectAttendance: 0,
@@ -103,7 +114,26 @@ export default function Dashboard() {
         setLoading(false);
       }
     })();
-  }, []);
+
+    // Check database connection
+    supabase.from("system_settings").select("id").limit(1)
+      .then(res => setDbOnline(!res.error))
+      .catch(() => setDbOnline(false));
+
+    // Listen to online status
+    const on = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    
+    // Proactively check for update in background quietly
+    checkForUpdates(true);
+
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, [checkForUpdates]);
 
   if (loading) return (
     <div className="flex items-center justify-center py-32">
@@ -228,6 +258,68 @@ export default function Dashboard() {
 
         {/* Right: KPI cards */}
         <div className="lg:col-span-2 space-y-4">
+          {/* ABL Payroll System Info & updates card */}
+          <div className="glass-card p-5 border-l-3 border-[#A855F7] animate-fade-in space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="icon-3d violet">
+                  <Server size={18} color="#fff" strokeWidth={2.2} />
+                </span>
+                <div>
+                  <h4 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">ABL Payroll Info</h4>
+                  <span className="text-sm font-bold text-white block mt-0.5">System Status</span>
+                </div>
+              </div>
+              {latestVersionInfo && latestVersionInfo.versionCode > currentBuild && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.7)]">
+                  NEW VERSION AVAILABLE
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs border-t border-white/5 pt-3">
+              <div>
+                <span className="text-slate-400 block font-semibold">Version</span>
+                <span className="font-semibold text-white font-mono">{currentVersion}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-semibold">Build Number</span>
+                <span className="font-semibold text-white font-mono">{currentBuild}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-semibold">Database Status</span>
+                <span className={`font-semibold flex items-center gap-1 ${dbOnline ? "text-emerald-400" : "text-amber-400"}`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                  {dbOnline ? "Supabase + SQLite" : "SQLite Offline"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-semibold">Sync Status</span>
+                <span className={`font-semibold flex items-center gap-1 ${isOnline ? "text-emerald-400" : "text-rose-400"}`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                  {isOnline ? "Online" : "Offline"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-xs bg-white/5 p-2 rounded-lg">
+              <span className="text-slate-400">Update Status</span>
+              <span className={`font-semibold ${
+                latestVersionInfo 
+                  ? latestVersionInfo.versionCode > currentBuild
+                    ? "text-rose-400 animate-pulse font-bold"
+                    : "text-emerald-400"
+                  : "text-slate-400"
+              }`}>
+                {latestVersionInfo 
+                  ? latestVersionInfo.versionCode > currentBuild
+                    ? `v${latestVersionInfo.versionName} Available`
+                    : "Up to Date"
+                  : "Not Checked"}
+              </span>
+            </div>
+          </div>
+
           {kpis.map((k, idx) => (
             <div
               key={k.label}

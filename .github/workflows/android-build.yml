@@ -1,117 +1,159 @@
-name: Build Android APK
+name: Build and Release ABL Payroll
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'abl-employee-app/**'
-      - '.github/workflows/android-build.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-android:
-    name: Build Release APK
+  build-and-release:
+    name: Build & Release OTA Update
     runs-on: ubuntu-22.04
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
-      - name: Checkout
+      # ── 1. Checkout Code ──
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # ── 2. JDK 21 ─────────────────────────────────────────────────────────────
+      # ── 2. Set up JDK 21 ──
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      # ── 3. Install SDK 36 ───────────────────────────────────────────────────
-      #   ubuntu-22.04 ships with Android SDK 34. We need 36.
+      # ── 3. Install Android SDK 36 & Build Tools ──
       - name: Install Android SDK 36
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;35.0.0" "platform-tools"
 
-      # ── 4. Node 22 ────────────────────────────────────────────────────────────
+      # ── 4. Set up Node.js 22 ──
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: abl-employee-app/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      # ── 5. Install JS deps ────────────────────────────────────────────────────
+      # ── 5. Install JS Dependencies ──
       - name: Install npm dependencies
-        working-directory: abl-employee-app
         run: npm ci
 
-      # ── 6. Write .env ─────────────────────────────────────────────────────────
-      - name: Write .env
-        working-directory: abl-employee-app
-        run: |
-          echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}" > .env
-          echo "VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}" >> .env
-
-      # ── 7. Vite build ─────────────────────────────────────────────────────────
+      # ── 6. Build Web Assets ──
       - name: Build web assets
-        working-directory: abl-employee-app
-        run: npx vite build
+        run: npm run build
 
-      # ── 8. Capacitor sync ─────────────────────────────────────────────────────
+      # ── 7. Capacitor Sync Android ──
       - name: Capacitor sync android
-        working-directory: abl-employee-app
         run: npx cap sync android
 
-      # ── 9. Gradle cache ───────────────────────────────────────────────────────
+      # ── 8. Cache Gradle ──
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('abl-employee-app/android/**/*.gradle*') }}
+          key: gradle-${{ hashFiles('android/**/*.gradle*') }}
           restore-keys: gradle-
 
-      # ── 10. gradlew permission ────────────────────────────────────────────────
+      # ── 9. Make gradlew executable ──
       - name: Make gradlew executable
-        run: chmod +x abl-employee-app/android/gradlew
+        run: chmod +x android/gradlew
 
-      # ── 11. Build Release APK ─────────────────────────────────────────────────
-      - name: Gradle assembleRelease
-        working-directory: abl-employee-app/android
-        run: ./gradlew assembleRelease --no-daemon --warning-mode=all
+      # ── 10. Compile Release APK & AAB ──
+      - name: Gradle clean, assembleRelease and bundleRelease
+        working-directory: android
+        run: |
+          ./gradlew clean --no-daemon
+          ./gradlew assembleRelease --no-daemon
+          ./gradlew bundleRelease --no-daemon
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
-      # ── 12. Upload APK artifact ───────────────────────────────────────────────
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ABL-Employee-Attendance-V2.0-Offline-Release-APK
-          path: abl-employee-app/android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      # ── 13. Summary ───────────────────────────────────────────────────────────
-      - name: Build summary
+      # ── 11. Generate version.json & release-notes.json ──
+      - name: Generate Update Configs
         run: |
-          APK=$(find abl-employee-app/android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          APK_BASENAME=$(basename "$APK")
-          SIZE=$(du -sh "$APK" | cut -f1)
-          echo "## ✅ ABL Employee Attendance App — Offline APK Build SUCCESS" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| App | ABL Employee Attendance V2.0 (Offline-First) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Package | com.ablpayroll.employee |" >> $GITHUB_STEP_SUMMARY
-          echo "| Mode | Offline-First + Supabase Sync |" >> $GITHUB_STEP_SUMMARY
-          echo "| File | $APK_BASENAME |" >> $GITHUB_STEP_SUMMARY
-          echo "| Size | $SIZE |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📥 APK Install Location" >> $GITHUB_STEP_SUMMARY
-          echo "Download from the **Artifacts** section above: \`ABL-Employee-Attendance-V2.0-Offline-Release-APK\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Source Path:** \`$APK\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Features:** Offline SQLite ● TIME IN/OUT ● BREAK IN/OUT ● Sync Center ● Admin System Integration" >> $GITHUB_STEP_SUMMARY
+          VERSION_CODE=${{ github.run_number }}
+          VERSION_NAME="1.0.${{ github.run_number }}"
+          
+          # Write version.json
+          cat <<EOF > version.json
+          {
+              "versionCode": ${VERSION_CODE},
+              "versionName": "${VERSION_NAME}",
+              "minimumVersion": 1,
+              "mandatory": false,
+              "releaseDate": "$(date +'%Y-%m-%d')",
+              "apkUrl": "https://github.com/adreman651-dot/ablpayrollsolutions/releases/latest/download/app-release.apk",
+              "releaseNotesUrl": "https://github.com/adreman651-dot/ablpayrollsolutions/releases/latest/download/release-notes.json"
+          }
+          EOF
+          
+          # Write release-notes.json
+          cat <<EOF > release-notes.json
+          {
+           "version": "${VERSION_NAME}",
+           "changes": [
+             "Attendance improvements",
+             "Payroll improvements",
+             "Dashboard improvements",
+             "Performance optimization",
+             "Bug fixes"
+           ]
+          }
+          EOF
+
+      # ── 12. Commit version.json to main (powers raw.githubusercontent.com URL) ──
+      - name: Commit version.json to main branch
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json release-notes.json
+          # Only commit if there are actual changes
+          git diff --cached --quiet || git commit -m "chore(ota): update version.json to v1.0.${{ github.run_number }} [skip ci]"
+          git push origin main
+
+      # ── 13. Package Output Files ──
+      - name: Package Output Artifacts
+        run: |
+          # Find compiled APK and bundle AAB files
+          APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          AAB_PATH=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          
+          if [ -f "$APK_PATH" ]; then
+            cp "$APK_PATH" app-release.apk
+            echo "Found APK at $APK_PATH"
+          else
+            echo "Error: Release APK not found!"
+            exit 1
+          fi
+          
+          if [ -f "$AAB_PATH" ]; then
+            cp "$AAB_PATH" app-release.aab
+            echo "Found AAB at $AAB_PATH"
+          else
+            echo "Error: Release AAB not found!"
+            exit 1
+          fi
+
+      # ── 14. Create GitHub Release ──
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Release v1.0.${{ github.run_number }}
+          draft: false
+          prerelease: false
+          files: |
+            app-release.apk
+            app-release.aab
+            version.json
+            release-notes.json
+          token: ${{ secrets.GITHUB_TOKEN }}

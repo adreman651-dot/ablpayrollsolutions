@@ -169,6 +169,42 @@ export const initOfflineDb = async (): Promise<void> => {
   console.log("Offline Database: Web environment. Directing to Supabase with mock-offline fallback.");
 };
 
+// Ensure all tables have sync_status column (migration for existing databases)
+export const ensureSyncStatusColumns = async (): Promise<void> => {
+  if (!window.electronAPI) return; // Only for Desktop
+
+  const tablesToMigrate = [
+    'employees',
+    'attendance',
+    'leaves',
+    'loans',
+    'loan_payments',
+    'payroll_runs',
+    'payroll_items',
+    'profiles',
+    'system_settings',
+    'user_roles'
+  ];
+
+  for (const table of tablesToMigrate) {
+    try {
+      // Check if column exists
+      const result = await window.electronAPI.dbQuery(`PRAGMA table_info(${table})`);
+      const hasColumn = result.some((col: any) => col.name === 'sync_status');
+
+      if (!hasColumn) {
+        // Add sync_status column if it doesn't exist
+        await window.electronAPI.dbExecute(
+          `ALTER TABLE ${table} ADD COLUMN sync_status TEXT DEFAULT 'synced'`
+        );
+        console.log(`[Migration] Added sync_status column to ${table}`);
+      }
+    } catch (err) {
+      console.warn(`[Migration] Could not migrate ${table}:`, err);
+    }
+  }
+};
+
 export const offlineQuery = async (sql: string, params: any[] = []): Promise<any[]> => {
   if (window.electronAPI) {
     return await window.electronAPI.dbQuery(sql, params);

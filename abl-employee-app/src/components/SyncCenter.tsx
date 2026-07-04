@@ -134,37 +134,113 @@ const SyncCenter: React.FC<SyncCenterProps> = ({ employee, isOnline }) => {
         }
       }
 
-      // ── STEP 2: Download latest employee profile ────────────────────────────
-      addProgress('⬇️ Downloading employee profile...');
-      const { data: empData, error: empErr } = await supabase
-        .from('employees')
-        .select('id, employee_code, first_name, last_name, department, position, daily_rate')
-        .eq('id', employee.id)
-        .single();
+      // ── STEP 2: Download remote updates since last sync ─────────────────────
+      addProgress('⬇️ Checking remote updates...');
+      const lastLog = await db.query("SELECT sync_date, last_synced FROM sync_logs ORDER BY id DESC LIMIT 1", []);
+      const lastSyncTime = lastLog.values && lastLog.values.length > 0 ? lastLog.values[0].last_synced || lastLog.values[0].sync_date : null;
 
-      if (!empErr && empData) {
-        await db.run(
-          `INSERT OR REPLACE INTO employees (id, employee_code, first_name, last_name, department, position, daily_rate, last_synced)
-           VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-          [empData.id, empData.employee_code, empData.first_name, empData.last_name, empData.department, empData.position, empData.daily_rate]
-        );
-        addProgress('✅ Employee profile updated.');
-      } else {
-        addProgress('⚠️ Could not fetch employee profile.');
+      let downloaded = 0;
+      let failed = 0;
+
+      // Download updated employees
+      try {
+        addProgress('⬇️ Downloading updated employees...');
+        let empQuery = supabase.from('employees').select('id, employee_code, first_name, last_name, department, position, daily_rate, updated_at');
+        if (lastSyncTime) empQuery = empQuery.or(`updated_at.gt.${lastSyncTime},created_at.gt.${lastSyncTime}`);
+        const { data: empRows, error: empErr } = await empQuery;
+        if (!empErr && empRows && empRows.length > 0) {
+          for (const r of empRows) {
+            try {
+              await db.run(
+                `INSERT OR REPLACE INTO employees (id, employee_code, first_name, last_name, department, position, daily_rate, updated_at, last_synced)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+                [r.id, r.employee_code, r.first_name, r.last_name, r.department, r.position, r.daily_rate, r.updated_at]
+              );
+              downloaded++;
+            } catch (e) {
+              console.error('Failed insert employee', e);
+              failed++;
+            }
+          }
+          addProgress(`✅ Employees updated: ${empRows.length}`);
+        } else {
+          addProgress('ℹ️ No employee updates found.');
+        }
+      } catch (e: any) {
+        console.error('Employee download failed', e);
+        failed++;
       }
 
-      // ── STEP 3: Log sync ───────────────────────────────────────────────────
-      const syncDate = new Date().toISOString();
-      await db.run(
-        "INSERT INTO sync_logs (sync_date, records_synced, status) VALUES (?, ?, 'SUCCESS')",
-        [syncDate, syncedCount]
-      );
-      addProgress(`🎉 Sync complete! ${syncedCount} record(s) synchronized.`);
+      // Download updated attendance records
+      try {
+        addProgress('⬇️ Downloading updated attendance...');
+        let attQuery = supabase.from('attendance').select('*');
+        if (lastSyncTime) attQuery = attQuery.or(`updated_at.gt.${lastSyncTime},created_at.gt.${lastSyncTime}`);
+        const { data: attRows, error: attErr } = await attQuery;
+        if (!attErr && attRows && attRows.length > 0) {
+          for (const r of attRows) {
+            try {
+              await db.run(
+                `INSERT OR REPLACE INTO attendance (id, employee_id, date, time_in, time_out, selfie_url, latitude, longitude, created_at, sync_status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced')`,
+                [r.id, r.employee_id, r.attendance_date || r.date, r.time_in, r.time_out, r.selfie_url || r.photo_in_url || null, r.latitude || null, r.longitude || null, r.updated_at || r.created_at]
+              );
+              downloaded++;
+            } catch (e) {
+              console.error('Failed insert attendance', e);
+              failed++;
+            }
+          }
+          addProgress(`✅ Attendance updated: ${attRows.length}`);
+        } else {
+          addProgress('ℹ️ No attendance updates found.');
+        }
+      } catch (e: any) {
+        console.error('Attendance download failed', e);
+        failed++;
+      }
 
-      setSyncMessage({
-        text: `Sync successful! ${syncedCount} record(s) uploaded to system.`,
-        type: 'success'
-      });
+      // ── STEP 3: Download other tables (leaves, loans, payroll, settings, profiles) ─────────
+      const otherTables = ['leaves','loans','loan_payments','payroll_runs','payroll_items','system_settings','profiles','user_roles','leave_types'];
+      for (const table of otherTables) {
+        try {
+          addProgress(`⬇️ Downloading updated ${table}...`);
+          let q = supabase.from(table as any).select('*');
+          if (lastSyncTime) q = q.or(`updated_at.gt.${lastSyncTime},created_at.gt.${lastSyncTime}`);
+          const { data: rows, error: tableErr } = await q;
+          if (!tableErr && rows && rows.length > 0) {
+            for (const r of rows) {
+              try {
+                const keys = Object.keys(r);
+                const placeholders = keys.map(() => '?').join(', ');
+                const sql = `INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`;
+                const vals = keys.map(k => r[k]);
+                await db.run(sql, vals);
+                downloaded++;
+              } catch (e) {
+                console.error(`Failed insert ${table}`, e);
+                failed++;
+              }
+            }
+            addProgress(`✅ ${table} updated: ${rows.length}`);
+          } else {
+            addProgress(`ℹ️ No ${table} updates found.`);
+          }
+        } catch (e: any) {
+          console.error(`Failed downloading ${table}`, e);
+          failed++;
+        }
+      }
+
+      // ── STEP 4: Log sync with metrics ───────────────────────────────────
+      const finalSyncDate = new Date().toISOString();
+      await db.run(
+        "INSERT INTO sync_logs (sync_date, records_synced, uploaded_records, downloaded_records, failed_records, status, last_sync_date) VALUES (?, ?, ?, ?, ?, 'SUCCESS', ?)",
+        [finalSyncDate, syncedCount + downloaded, syncedCount, downloaded, failed, finalSyncDate]
+      );
+      addProgress(`🎉 Sync complete! Uploaded: ${syncedCount}, Downloaded: ${downloaded}, Failed: ${failed}`);
+
+      setSyncMessage({ text: `Sync successful! Uploaded ${syncedCount}, Downloaded ${downloaded}`, type: 'success' });
       await fetchStats();
     } catch (err: any) {
       addProgress(`❌ Sync failed: ${err.message}`);

@@ -116,4 +116,12 @@
 
   .live-badge { @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-semibold text-white; background: linear-gradient(90deg,#7C3AED,#A855F7); box-shadow: 0 4px 14px rgba(124,58,237,.5); animation: pulseGlow 2.4s ease-in-out infinite; }
   @keyframes pulseGlow { 0%,100% { box-shadow: 0 4px 14px rgba(124,58,237,.5); } 50% { box-shadow: 0 4px 24px rgba(168,85,247,.85); } }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

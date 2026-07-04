@@ -1,19 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './lib/supabase';
-import { LogIn, User, Clock, History, LogOut, RefreshCw, AlertTriangle, CheckCircle, Wifi, WifiOff, Settings, ArrowLeft, Camera as CameraIcon } from 'lucide-react';
+import { LogIn, User, Clock, History, LogOut, RefreshCw, AlertTriangle, CheckCircle, Wifi, WifiOff, Settings, ArrowLeft, Camera as CameraIcon, Download } from 'lucide-react';
 import { initDB, saveRecord, getAllRecords, getRecordCountByDateAndType } from './lib/db';
 import { startSyncListener, triggerSync } from './lib/sync';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Network } from '@capacitor/network';
+import { UpdateService, UpdateInfo } from './services/UpdateService';
+import { UpdateDialog, UpdateScreen } from './components/UpdateUI';
 
 function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'landing' | 'punch' | 'login' | 'dashboard' | 'history' | 'sync' | 'profile'>('landing');
+  const [view, setView] = useState<'landing' | 'punch' | 'login' | 'dashboard' | 'history' | 'sync' | 'profile' | 'update'>('landing');
   const [isOnline, setIsOnline] = useState(true);
   const [punchMode, setPunchMode] = useState<'in'|'out'>('in');
+  const [updateAvailable, setUpdateAvailable] = useState<UpdateInfo | null>(null);
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState(0);
 
   useEffect(() => {
     initDB().then(() => {
@@ -28,17 +34,56 @@ function App() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoading(false);
-      // If logged in, maybe still show landing? Let's just stay on the view they select.
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
+    // Check for updates on startup
+    setTimeout(async () => {
+      const update = await UpdateService.checkForUpdates();
+      if (update) {
+        setUpdateAvailable(update);
+        setShowUpdateDialog(true);
+      }
+    }, 2000);
+
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleUpdateNow = async () => {
+    if (!updateAvailable) return;
+    setShowUpdateDialog(false);
+    setDownloadingUpdate(true);
+    setUpdateProgress(0);
+    try {
+      await UpdateService.downloadAndInstall(updateAvailable.apkUrl, (p) => {
+        setUpdateProgress(Math.round(p));
+      });
+    } catch (e: any) {
+      alert("Failed to download update: " + e.message);
+      setDownloadingUpdate(false);
+    }
+  };
+
   if (loading) return <div className="min-h-[100dvh] flex items-center justify-center bg-[#050d1a] text-white">Loading...</div>;
+
+  if (downloadingUpdate) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center bg-[#050d1a] text-white px-6">
+        <div className="bg-slate-800 p-8 rounded-2xl w-full max-w-sm text-center shadow-2xl border border-slate-700">
+          <Download className="w-12 h-12 text-emerald-400 mx-auto mb-4 animate-bounce" />
+          <h2 className="text-xl font-black uppercase tracking-widest text-emerald-400 mb-2">Downloading Update...</h2>
+          <div className="text-4xl font-black mb-6">{updateProgress}%</div>
+          <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden">
+            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${updateProgress}%` }} />
+          </div>
+          <p className="text-slate-400 text-sm mt-6 uppercase tracking-wider font-bold">Please wait</p>
+        </div>
+      </div>
+    );
+  }
 
   const navigateToPunch = (mode: 'in' | 'out') => {
     setPunchMode(mode);
@@ -52,9 +97,18 @@ function App() {
         {isOnline ? <><Wifi className="w-3.5 h-3.5 text-emerald-400" /> <span className="text-emerald-400">Online</span></> : <><WifiOff className="w-3.5 h-3.5 text-rose-400" /> <span className="text-rose-400">Offline</span></>}
       </div>
 
-      {view === 'landing' && <LandingView onPunch={navigateToPunch} onAdmin={() => setView(session ? 'sync' : 'login')} />}
+      {showUpdateDialog && updateAvailable && (
+        <UpdateDialog 
+          info={updateAvailable} 
+          onUpdate={handleUpdateNow} 
+          onLater={() => setShowUpdateDialog(false)} 
+        />
+      )}
+
+      {view === 'landing' && <LandingView onPunch={navigateToPunch} onAdmin={() => setView(session ? 'sync' : 'login')} updateAvailable={!!updateAvailable} onUpdateClick={() => setView('update')} />}
       {view === 'punch' && <OfflinePunchView mode={punchMode} onBack={() => setView('landing')} isOnline={isOnline} />}
       {view === 'login' && <Login onBack={() => setView('landing')} onSuccess={() => setView('sync')} />}
+      {view === 'update' && <UpdateScreen onBack={() => setView('landing')} />}
       
       {/* Logged in views */}
       {(view === 'sync' || view === 'history' || view === 'profile') && session && (
@@ -87,7 +141,7 @@ function App() {
   );
 }
 
-function LandingView({ onPunch, onAdmin }: { onPunch: (m: 'in'|'out') => void, onAdmin: () => void }) {
+function LandingView({ onPunch, onAdmin, updateAvailable, onUpdateClick }: { onPunch: (m: 'in'|'out') => void, onAdmin: () => void, updateAvailable?: boolean, onUpdateClick?: () => void }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -112,9 +166,25 @@ function LandingView({ onPunch, onAdmin }: { onPunch: (m: 'in'|'out') => void, o
 
       <div className="flex flex-col items-center gap-5 w-full pt-6 relative z-10">
         <div className="text-center">
-          <h1 className="text-[1.15rem] font-black text-white tracking-widest uppercase drop-shadow-md">ABL PAYROLL SOLUTIONS</h1>
-          <p className="text-[0.65rem] font-bold text-indigo-300 tracking-[0.25em] mt-1.5 uppercase">Payroll & Attendance</p>
+          <h1 className="text-[1.15rem] font-black text-white tracking-widest uppercase drop-shadow-md">ABL PAYROLL</h1>
+          <div className="flex flex-col items-center gap-1 mt-3">
+            <div className="text-[10px] font-mono text-slate-400">Version 1.0.2</div>
+            <div className="text-[10px] font-bold text-emerald-500 flex items-center gap-1"><CheckCircle className="w-3 h-3"/> Database Connected</div>
+            <div className="text-[10px] font-bold text-emerald-500 flex items-center gap-1"><CheckCircle className="w-3 h-3"/> Sync Ready</div>
+          </div>
         </div>
+        
+        {updateAvailable ? (
+          <button onClick={onUpdateClick} className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider px-4 py-1.5 rounded-full border border-emerald-500/30 flex items-center gap-2 hover:bg-emerald-500/30 transition-colors animate-pulse mt-2">
+            <Download className="w-3 h-3" />
+            NEW UPDATE AVAILABLE
+          </button>
+        ) : (
+          <button onClick={onUpdateClick} className="text-slate-400 text-[10px] font-bold uppercase tracking-wider px-4 py-1.5 rounded-full border border-slate-700 flex items-center gap-2 hover:bg-slate-800 transition-colors mt-2">
+            <CheckCircle className="w-3 h-3" />
+            Check for Updates
+          </button>
+        )}
       </div>
 
       {/* Digital Clock Card */}
@@ -172,7 +242,7 @@ function LandingView({ onPunch, onAdmin }: { onPunch: (m: 'in'|'out') => void, o
       </div>
 
       {/* Admin Login Bottom Pill */}
-      <div className="mt-8 pt-4 w-full flex justify-center pb-2 z-10">
+      <div className="mt-8 pt-4 w-full flex justify-between items-center pb-2 z-10 px-4">
         <button 
           onClick={onAdmin}
           className="group flex items-center gap-3 px-4 py-2.5 rounded-full bg-white/[0.02] border border-white/[0.04] hover:bg-purple-500/[0.08] hover:border-purple-500/30 transition-all active:scale-95"
@@ -181,6 +251,16 @@ function LandingView({ onPunch, onAdmin }: { onPunch: (m: 'in'|'out') => void, o
             <Settings className="w-3.5 h-3.5 text-purple-400" />
           </div>
           <span className="text-[0.65rem] font-bold text-slate-500 group-hover:text-purple-300 uppercase tracking-[0.15em] transition-colors">Admin</span>
+        </button>
+        
+        <button 
+          onClick={onUpdateClick}
+          className="group flex items-center gap-3 px-4 py-2.5 rounded-full bg-white/[0.02] border border-white/[0.04] hover:bg-indigo-500/[0.08] hover:border-indigo-500/30 transition-all active:scale-95"
+        >
+          <div className="w-6 h-6 rounded-[0.4rem] bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
+            <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+          </div>
+          <span className="text-[0.65rem] font-bold text-slate-500 group-hover:text-indigo-300 uppercase tracking-[0.15em] transition-colors">Updates</span>
         </button>
       </div>
     </div>
