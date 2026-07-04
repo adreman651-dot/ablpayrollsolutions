@@ -1,5 +1,5 @@
 import { Outlet, useLocation, Link } from "react-router-dom";
-import { Bell, Search, LayoutDashboard, Users, Clock, DollarSign, CalendarDays, Landmark, FileText, Receipt, Settings, LogOut, AlertTriangle } from "lucide-react";
+import { Bell, Search, LayoutDashboard, Users, Clock, DollarSign, CalendarDays, Landmark, FileText, Receipt, Settings, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { SyncButton } from "@/components/SyncButton";
@@ -40,23 +40,22 @@ export default function AppLayout() {
 
   const visible = dockItems.filter(i => roles.length === 0 || i.roles.some(r => roles.includes(r as any)));
 
-  const [dbVersion, setDbVersion] = useState<string | null>(null);
-
+  // Auto-sync app_version in system_settings to current APP_VERSION (no user prompt)
   useEffect(() => {
-    supabase.from('system_settings').select('value').eq('key', 'app_version').single()
+    supabase.from('system_settings').select('value').eq('key', 'app_version').maybeSingle()
       .then(({ data }) => {
-        if (data && data.value) setDbVersion(data.value);
+        if (!data || data.value !== APP_VERSION) {
+          supabase.from('system_settings').upsert(
+            { key: 'app_version', value: APP_VERSION, description: 'Application version (auto-synced).' },
+            { onConflict: 'key' }
+          ).then(() => {});
+        }
       });
   }, []);
 
   return (
     <div className="dark dashboard-shell flex flex-col min-h-screen">
-      {dbVersion && dbVersion !== APP_VERSION && (
-        <div className="bg-amber-500/90 text-amber-950 px-4 py-2 text-center text-sm font-semibold flex items-center justify-center gap-2 relative z-50">
-          <AlertTriangle className="w-4 h-4" />
-          New application version available ({dbVersion}). Please contact your administrator to update.
-        </div>
-      )}
+
       {/* Top Navbar */}
       <header className="glass-nav sticky top-0 z-30 h-16 flex items-center justify-between px-6 md:px-8">
         <Link to="/dashboard" className="flex items-center gap-3">

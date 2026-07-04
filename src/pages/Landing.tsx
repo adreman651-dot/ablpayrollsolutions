@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Settings } from "lucide-react";
+import ablLogo from "@/assets/abl-logo.png.asset.json";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -40,8 +41,8 @@ export default function Landing() {
         
         {/* Header */}
         <div className="flex flex-col items-center gap-5 w-full pt-2">
-          <div className="w-16 h-16 rounded-[1.25rem] bg-gradient-to-br from-indigo-500 to-purple-600 shadow-xl shadow-purple-900/20 flex items-center justify-center border border-white/10">
-            <span className="text-3xl font-bold text-white tracking-tight">A</span>
+          <div className="w-20 h-20 rounded-[1.25rem] overflow-hidden shadow-xl shadow-purple-900/20 border border-white/10 bg-black/40 flex items-center justify-center">
+            <img src={ablLogo.url} alt="ABL Software Solutions" className="w-full h-full object-cover" />
           </div>
           <div className="text-center">
             <h1 className="text-[1.15rem] font-black text-white tracking-widest uppercase drop-shadow-md">{companyName}</h1>

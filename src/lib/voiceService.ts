@@ -60,20 +60,23 @@ export async function playVoice(
   // Check specific trigger switch
   if (settingsTrigger && !settings[settingsTrigger]) return;
 
-  // 1. Try Custom MP3 play
+  // 1. Try custom MP3 without a blocking HEAD request (faster).
+  //    If it fails to load, fall back to TTS immediately.
   if (mp3FileName) {
     try {
       const publicUrl = supabase.storage.from("voice-assets").getPublicUrl(mp3FileName).data.publicUrl;
-      // Head request or quick check if exists
-      const testRes = await fetch(publicUrl, { method: "HEAD" });
-      if (testRes.ok) {
-        const audio = new Audio(publicUrl);
-        audio.volume = settings.voice_volume / 100;
-        await audio.play();
-        return; // Success, skip TTS fallback
-      }
+      const audio = new Audio(publicUrl);
+      audio.volume = settings.voice_volume / 100;
+      const played = await new Promise<boolean>((resolve) => {
+        audio.onerror = () => resolve(false);
+        audio.oncanplaythrough = () => resolve(true);
+        audio.play().then(() => resolve(true)).catch(() => resolve(false));
+        // Don't wait too long — fall through to TTS quickly if MP3 is slow.
+        setTimeout(() => resolve(false), 150);
+      });
+      if (played) return;
     } catch (e) {
-      console.warn(`Custom MP3 file (${mp3FileName}) could not be played, falling back to TTS`, e);
+      // fall through to TTS
     }
   }
 
