@@ -457,59 +457,81 @@ export default function TimeIn() {
   };
 
   // ─── High-accuracy GPS ────────────────────────────────────────────────────
-  const getPreciseLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number }> => {
+  // Waits for a fresh GPS fix ≤ REQUIRED_ACC meters (preferred ≤ PREFERRED_ACC).
+  // Returns null if no acceptable fix is obtained within MAX_WAIT_MS.
+  const getPreciseLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number } | null> => {
+    const REQUIRED_ACC = 20;   // meters — hard gate
+    const PREFERRED_ACC = 10;  // meters — resolve immediately
+    const MAX_WAIT_MS = 30000; // 30s per spec
+    const isNative = Capacitor.isNativePlatform();
+
     return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve({ latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
+      let best: { latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number } | null = null;
+      let resolved = false;
+      let webWatchId: number | null = null;
+      let capWatchId: string | null = null;
+
+      const finish = (value: typeof best) => {
+        if (resolved) return;
+        resolved = true;
+        try {
+          if (webWatchId !== null) navigator.geolocation.clearWatch(webWatchId);
+        } catch {}
+        if (capWatchId) {
+          Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
+        }
+        setGpsStatus(null);
+        // Only accept fixes better than the hard gate; otherwise return null.
+        if (value && value.accuracy <= REQUIRED_ACC) resolve(value);
+        else resolve(null);
+      };
+
+      const onFix = (lat: number, lng: number, acc: number, alt: number | null, ts: number) => {
+        setAccuracy(acc);
+        setLocation({ lat, lng });
+        setGpsStatus(`Waiting for a more accurate GPS signal… ${Math.round(acc)}m (need ≤ ${REQUIRED_ACC}m)`);
+        if (!best || acc < best.accuracy) {
+          best = { latitude: lat, longitude: lng, accuracy: acc, altitude: alt, timestamp: ts };
+        }
+        if (acc <= PREFERRED_ACC) finish(best);
+      };
+
+      if (isNative) {
+        Geolocation.watchPosition(
+          { enableHighAccuracy: true, timeout: MAX_WAIT_MS, maximumAge: 0 },
+          (pos, err) => {
+            if (err || !pos) return;
+            onFix(
+              pos.coords.latitude,
+              pos.coords.longitude,
+              pos.coords.accuracy ?? 9999,
+              pos.coords.altitude ?? null,
+              pos.timestamp
+            );
+          }
+        ).then((id) => { capWatchId = id; }).catch(() => {});
+      } else if (navigator.geolocation) {
+        webWatchId = navigator.geolocation.watchPosition(
+          (pos) => onFix(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            pos.coords.accuracy ?? 9999,
+            pos.coords.altitude ?? null,
+            pos.timestamp
+          ),
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 0, timeout: MAX_WAIT_MS }
+        );
+      } else {
+        finish(null);
         return;
       }
 
-      let best: { latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number } | null = null;
-      let resolved = false;
-
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const acc = pos.coords.accuracy;
-          setGpsStatus(`Acquiring GPS… accuracy: ${Math.round(acc)}m`);
-          if (!best || acc < best.accuracy) {
-            best = {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: acc,
-              altitude: pos.coords.altitude,
-              timestamp: pos.timestamp,
-            };
-          }
-          if (acc <= 20 && !resolved) {
-            resolved = true;
-            navigator.geolocation.clearWatch(watchId);
-            setGpsStatus(null);
-            resolve(best);
-          }
-        },
-        () => {
-          // On error, resolve with last known location
-          if (!resolved) {
-            resolved = true;
-            navigator.geolocation.clearWatch(watchId);
-            setGpsStatus(null);
-            resolve(best ?? { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
-          }
-        },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
-      );
-
-      // Timeout after 12 seconds — resolve with best available
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          navigator.geolocation.clearWatch(watchId);
-          setGpsStatus(null);
-          resolve(best ?? { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
-        }
-      }, 12000);
+      // After MAX_WAIT_MS accept best if within REQUIRED_ACC, else give up.
+      setTimeout(() => finish(best), MAX_WAIT_MS);
     });
   };
+
 
   const reverseGeocode = async (lat: number, lng: number, accuracy: number): Promise<string> => {
     try {
