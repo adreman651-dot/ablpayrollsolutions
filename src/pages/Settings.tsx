@@ -179,7 +179,7 @@ export default function Settings() {
         id: r.user_id,
         email: "",
         role: r.role,
-        full_name: profileMap.get(r.user_id)?.full_name || "Unknown",
+        full_name: (profileMap.get(r.user_id) as any)?.full_name || "Unknown",
       })));
     }
 
