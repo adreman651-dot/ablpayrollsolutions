@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle, ArrowLeft } from "lucide-react";
+import { CheckCircle, ArrowLeft, MapPin } from "lucide-react";
 import { toast } from "sonner";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
+
 
 type Mode = "in" | "out";
 type Phase = "active" | "success";
