@@ -575,24 +575,30 @@ export default function TimeIn() {
     setSubmitting(true);
     setMode(selectedMode);
 
+    // Acquire high-accuracy GPS FIRST — reject punch if we can't get ≤ 20m.
+    setGpsStatus('Waiting for a more accurate GPS signal…');
+    const preciseLocation = await getPreciseLocation();
+    if (!preciseLocation) {
+      toast.error("Could not acquire an accurate GPS location (need ≤ 20m). Please move to an open area and try again.");
+      playErrorBeep();
+      setGpsStatus(null);
+      setSubmitting(false);
+      return;
+    }
+
     const selfieBase64 = captureSelfie();
     let photoUrl: string | null = null;
     if (selfieBase64) photoUrl = await uploadSelfie(selfieBase64, employeeId);
 
-    // Acquire high-accuracy GPS + reverse geocode
-    setGpsStatus('Acquiring GPS…');
-    let preciseLocation = { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null as number | null, timestamp: Date.now() };
-    let preciseAddress = address || null;
+    let preciseAddress: string | null = null;
     try {
-      preciseLocation = await getPreciseLocation();
       preciseAddress = await reverseGeocode(preciseLocation.latitude, preciseLocation.longitude, preciseLocation.accuracy);
-    } catch (gpsErr) {
-      console.warn('GPS acquire failed, using last known', gpsErr);
-      setGpsStatus(null);
+    } catch {
+      preciseAddress = address || null;
     }
 
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const deviceType = isMobile ? "Mobile" : "Desktop";
+    const deviceType = Capacitor.isNativePlatform() ? "Android" : (isMobile ? "Mobile" : "Desktop");
     const deviceTimestamp = new Date().toISOString();
     const employeeCodeStr = "ABL-" + code.padStart(5, "0");
 
@@ -600,8 +606,8 @@ export default function TimeIn() {
       const { data, error } = await supabase.rpc("kiosk_punch_v2", {
         _employee_id: employeeId,
         _mode: selectedMode,
-        _latitude: preciseLocation.latitude || null,
-        _longitude: preciseLocation.longitude || null,
+        _latitude: preciseLocation.latitude,
+        _longitude: preciseLocation.longitude,
         _photo_url: photoUrl,
         _address: preciseAddress || null,
         _employee_code: employeeCodeStr,
@@ -611,6 +617,7 @@ export default function TimeIn() {
         _face_verified: empFaceEnabled ? (faceMatchPct !== null && faceMatchPct >= 85) : null,
         _face_match_percentage: faceMatchPct,
         _face_detection_enabled: empFaceEnabled,
+        _gps_accuracy: preciseLocation.accuracy,
       } as any);
 
       if (error) throw error;
