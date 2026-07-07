@@ -322,17 +322,43 @@ export default function Attendance() {
                   <TableCell>
                     {r.time_in ? new Date(r.time_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
                     {r.location_label_in && (
-                       <div className="text-[10px] text-muted-foreground truncate max-w-[150px] flex items-center gap-1 mt-1" title={r.location_label_in}>
+                       <div className="text-[10px] text-muted-foreground truncate max-w-[180px] flex items-center gap-1 mt-1" title={r.location_label_in}>
                          <MapPin className="w-3 h-3" /> {r.location_label_in}
                        </div>
+                    )}
+                    {(r.latitude_in != null && r.longitude_in != null) && (
+                      <div className="text-[10px] mt-0.5 flex items-center gap-2">
+                        <span className="text-muted-foreground">
+                          {r.latitude_in.toFixed(5)}, {r.longitude_in.toFixed(5)}
+                          {r.gps_accuracy_in != null && ` · ±${Math.round(r.gps_accuracy_in)}m`}
+                        </span>
+                        <a
+                          href={`https://www.google.com/maps?q=${r.latitude_in},${r.longitude_in}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >Map</a>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>
                     {r.time_out ? new Date(r.time_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
                     {r.location_label_out && (
-                       <div className="text-[10px] text-muted-foreground truncate max-w-[150px] flex items-center gap-1 mt-1" title={r.location_label_out}>
+                       <div className="text-[10px] text-muted-foreground truncate max-w-[180px] flex items-center gap-1 mt-1" title={r.location_label_out}>
                          <MapPin className="w-3 h-3" /> {r.location_label_out}
                        </div>
+                    )}
+                    {(r.latitude_out != null && r.longitude_out != null) && (
+                      <div className="text-[10px] mt-0.5 flex items-center gap-2">
+                        <span className="text-muted-foreground">
+                          {r.latitude_out.toFixed(5)}, {r.longitude_out.toFixed(5)}
+                          {r.gps_accuracy_out != null && ` · ±${Math.round(r.gps_accuracy_out)}m`}
+                        </span>
+                        <a
+                          href={`https://www.google.com/maps?q=${r.latitude_out},${r.longitude_out}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >Map</a>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
