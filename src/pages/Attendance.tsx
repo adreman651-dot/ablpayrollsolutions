@@ -60,6 +60,11 @@ export default function Attendance() {
     time_in: '',
     time_out: '',
     location_label_in: '',
+    location_label_out: '',
+    latitude_in: '',
+    longitude_in: '',
+    latitude_out: '',
+    longitude_out: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
