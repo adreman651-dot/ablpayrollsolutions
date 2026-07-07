@@ -452,7 +452,7 @@ export default function Attendance() {
       {/* Edit Modal */}
       {isAdminOrHR && (
         <Dialog open={!!editModal} onOpenChange={(open) => { if (!open) setEditModal(null); }}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Attendance Record</DialogTitle>
             </DialogHeader>
@@ -464,43 +464,40 @@ export default function Attendance() {
               )}
               <div className="space-y-1">
                 <Label>Date</Label>
-                <Input
-                  type="date"
-                  value={editForm.date}
-                  onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
-                />
+                <Input type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
               </div>
-              <div className="space-y-1">
-                <Label>Time In</Label>
-                <Input
-                  type="datetime-local"
-                  value={editForm.time_in}
-                  onChange={e => setEditForm(f => ({ ...f, time_in: e.target.value }))}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Time In</Label>
+                  <Input type="datetime-local" value={editForm.time_in} onChange={e => setEditForm(f => ({ ...f, time_in: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Time Out</Label>
+                  <Input type="datetime-local" value={editForm.time_out} onChange={e => setEditForm(f => ({ ...f, time_out: e.target.value }))} />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label>Time Out</Label>
-                <Input
-                  type="datetime-local"
-                  value={editForm.time_out}
-                  onChange={e => setEditForm(f => ({ ...f, time_out: e.target.value }))}
-                />
+
+              <div className="border-t pt-3 space-y-3">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">Time In Location</div>
+                <Input value={editForm.location_label_in} onChange={e => setEditForm(f => ({ ...f, location_label_in: e.target.value }))} placeholder="Exact address (In)" />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input value={editForm.latitude_in} onChange={e => setEditForm(f => ({ ...f, latitude_in: e.target.value }))} placeholder="Latitude" />
+                  <Input value={editForm.longitude_in} onChange={e => setEditForm(f => ({ ...f, longitude_in: e.target.value }))} placeholder="Longitude" />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label>Location Label (In)</Label>
-                <Input
-                  value={editForm.location_label_in}
-                  onChange={e => setEditForm(f => ({ ...f, location_label_in: e.target.value }))}
-                  placeholder="e.g. Office, Branch A"
-                />
+
+              <div className="border-t pt-3 space-y-3">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">Time Out Location</div>
+                <Input value={editForm.location_label_out} onChange={e => setEditForm(f => ({ ...f, location_label_out: e.target.value }))} placeholder="Exact address (Out)" />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input value={editForm.latitude_out} onChange={e => setEditForm(f => ({ ...f, latitude_out: e.target.value }))} placeholder="Latitude" />
+                  <Input value={editForm.longitude_out} onChange={e => setEditForm(f => ({ ...f, longitude_out: e.target.value }))} placeholder="Longitude" />
+                </div>
               </div>
+
               <div className="space-y-1">
                 <Label>Notes</Label>
-                <Input
-                  value={editForm.notes}
-                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                  placeholder="Optional admin note"
-                />
+                <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional admin note" />
               </div>
             </div>
             <DialogFooter>
