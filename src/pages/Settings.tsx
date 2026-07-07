@@ -174,7 +174,7 @@ export default function Settings() {
     const userIds = [...new Set(roleData.map(r => r.user_id))];
     if (userIds.length) {
       const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", userIds);
-      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
       setUsers(roleData.map(r => ({
         id: r.user_id,
         email: "",
