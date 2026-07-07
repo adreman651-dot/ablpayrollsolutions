@@ -279,7 +279,8 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
           continue;
         }
 
-        for (const remoteRow of remoteRows) {
+        for (const remoteRowRaw of remoteRows as any[]) {
+          const remoteRow = remoteRowRaw as any;
           try {
             const localRows = await offlineQuery(
               `SELECT * FROM ${table} WHERE id = ?`,
@@ -308,7 +309,7 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
               totalDownloaded++;
             }
           } catch (rowErr: any) {
-            console.error(`[SyncEngine] Failed downloading ${table} row ${remoteRow.id}:`, rowErr.message);
+            console.error(`[SyncEngine] Failed downloading ${table} row ${remoteRow?.id}:`, rowErr.message);
             errorDetails += `${table} remote row err: ${rowErr.message}; `;
             failedCount++;
           }
