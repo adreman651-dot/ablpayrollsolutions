@@ -174,12 +174,12 @@ export default function Settings() {
     const userIds = [...new Set(roleData.map(r => r.user_id))];
     if (userIds.length) {
       const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", userIds);
-      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
       setUsers(roleData.map(r => ({
         id: r.user_id,
         email: "",
         role: r.role,
-        full_name: profileMap.get(r.user_id)?.full_name || "Unknown",
+        full_name: (profileMap.get(r.user_id) as any)?.full_name || "Unknown",
       })));
     }
 

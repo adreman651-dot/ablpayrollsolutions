@@ -142,7 +142,7 @@ export default function AppUpdateOverlay() {
                 <div>{formatTime(downloadProgress.timeRemaining)}</div>
               </div>
               <div className="flex justify-end pt-1">
-                <Button size="xs" variant="outline" onClick={cancelDownload} className="text-destructive border-destructive text-[11px] h-7 px-2 hover:bg-destructive/10">
+                <Button size="sm" variant="outline" onClick={cancelDownload} className="text-destructive border-destructive text-[11px] h-7 px-2 hover:bg-destructive/10">
                   Cancel
                 </Button>
               </div>

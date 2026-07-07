@@ -26,6 +26,8 @@ export type Database = {
           face_detection_enabled: boolean | null
           face_match_percentage: number | null
           face_verified: boolean | null
+          gps_accuracy_in: number | null
+          gps_accuracy_out: number | null
           id: string
           late_minutes: number | null
           latitude: number | null
@@ -59,6 +61,8 @@ export type Database = {
           face_detection_enabled?: boolean | null
           face_match_percentage?: number | null
           face_verified?: boolean | null
+          gps_accuracy_in?: number | null
+          gps_accuracy_out?: number | null
           id?: string
           late_minutes?: number | null
           latitude?: number | null
@@ -92,6 +96,8 @@ export type Database = {
           face_detection_enabled?: boolean | null
           face_match_percentage?: number | null
           face_verified?: boolean | null
+          gps_accuracy_in?: number | null
+          gps_accuracy_out?: number | null
           id?: string
           late_minutes?: number | null
           latitude?: number | null
@@ -677,6 +683,25 @@ export type Database = {
               _face_detection_enabled?: boolean
               _face_match_percentage?: number
               _face_verified?: boolean
+              _latitude?: number
+              _longitude?: number
+              _mode: string
+              _photo_url?: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              _address?: string
+              _device_timestamp?: string
+              _device_type?: string
+              _employee_code?: string
+              _employee_id: string
+              _employee_name?: string
+              _face_detection_enabled?: boolean
+              _face_match_percentage?: number
+              _face_verified?: boolean
+              _gps_accuracy?: number
               _latitude?: number
               _longitude?: number
               _mode: string
