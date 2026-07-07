@@ -734,6 +734,27 @@ export default function TimeIn() {
 
       {phase === "active" && (
         <>
+          {/* Live GPS panel (bottom-left) */}
+          <div className="fixed bottom-4 left-4 z-[25] max-w-xs text-[11px] leading-tight rounded-lg bg-black/60 backdrop-blur border border-white/10 p-2 text-white/90 pointer-events-none"
+            style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>
+            <div className="flex items-center gap-1 font-semibold text-white">
+              <MapPin className="w-3 h-3" />
+              GPS
+              <span className={
+                accuracy === null ? "text-white/60"
+                : accuracy <= 10 ? "text-emerald-400"
+                : accuracy <= 20 ? "text-yellow-300"
+                : "text-red-400"
+              }>
+                {accuracy === null ? "acquiring…" : accuracy <= 10 ? "Excellent" : accuracy <= 20 ? "Good" : "Poor"}
+              </span>
+            </div>
+            <div>Lat: {location ? location.lat.toFixed(6) : "—"}</div>
+            <div>Lng: {location ? location.lng.toFixed(6) : "—"}</div>
+            <div>Accuracy: {accuracy !== null ? `${Math.round(accuracy)} m` : "—"}</div>
+            <div className="truncate max-w-[260px]" title={address}>Addr: {address || "—"}</div>
+          </div>
+
           {/* LAYER 3: Top info bar */}
           <div className="fixed top-0 left-0 right-0 z-[10] flex flex-col items-center pt-10 pb-4 pointer-events-none"
             style={{ textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>
