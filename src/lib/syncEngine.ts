@@ -226,7 +226,7 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
                   .single();
                 if (downloadResult.data) {
                   const filteredRemote = {
-                    ...downloadResult.data,
+                    ...(downloadResult.data as any),
                     sync_status: 'synced',
                     synced_at: syncTime,
                   };
@@ -239,7 +239,7 @@ export const syncAllData = async (): Promise<{ success: boolean; details: string
             }
 
             const uploadObj = cleanRowForUpload(table, row);
-            let upsertQuery = realSupabase.from(table as any).upsert(uploadObj, { returning: 'representation' });
+            let upsertQuery = (realSupabase.from(table as any) as any).upsert(uploadObj);
             const { data: upserted, error: uploadErr } = await upsertQuery;
 
             if (uploadErr) {
