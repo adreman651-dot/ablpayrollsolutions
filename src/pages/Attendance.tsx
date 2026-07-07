@@ -26,6 +26,8 @@ interface AttendanceRecord {
   longitude_out: number | null;
   location_label_in: string | null;
   location_label_out: string | null;
+  gps_accuracy_in: number | null;
+  gps_accuracy_out: number | null;
   status: string | null;
   total_hours: number | null;
   employee_code: string | null;
