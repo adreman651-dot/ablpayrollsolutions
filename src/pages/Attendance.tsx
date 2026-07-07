@@ -107,6 +107,11 @@ export default function Attendance() {
       time_in: toLocalInput(r.time_in),
       time_out: toLocalInput(r.time_out),
       location_label_in: r.location_label_in || '',
+      location_label_out: r.location_label_out || '',
+      latitude_in: r.latitude_in != null ? String(r.latitude_in) : '',
+      longitude_in: r.longitude_in != null ? String(r.longitude_in) : '',
+      latitude_out: r.latitude_out != null ? String(r.latitude_out) : '',
+      longitude_out: r.longitude_out != null ? String(r.longitude_out) : '',
       notes: '',
     });
   };
@@ -136,11 +141,18 @@ export default function Attendance() {
         }
       }
 
+      const parseNum = (v: string) => v.trim() === '' ? null : (isNaN(Number(v)) ? null : Number(v));
+
       const updates: any = {
         date: editForm.date,
         time_in: timeInISO,
         time_out: timeOutISO,
         location_label_in: editForm.location_label_in || null,
+        location_label_out: editForm.location_label_out || null,
+        latitude_in: parseNum(editForm.latitude_in),
+        longitude_in: parseNum(editForm.longitude_in),
+        latitude_out: parseNum(editForm.latitude_out),
+        longitude_out: parseNum(editForm.longitude_out),
         late_minutes: lateMinutes,
         status: lateMinutes > 0 ? 'Late' : (timeInISO ? 'On Time' : editModal.status),
       };
