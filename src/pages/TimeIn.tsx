@@ -44,6 +44,7 @@ export default function TimeIn() {
   const [now, setNow] = useState(new Date());
   const [submitting, setSubmitting] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
   const [address, setAddress] = useState<string>("");
   const [mode, setMode] = useState<Mode | null>(routeMode);
   const [cameraReady, setCameraReady] = useState(false);
@@ -61,6 +62,8 @@ export default function TimeIn() {
 
   const detectionIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const capWatchIdRef = useRef<string | null>(null);
+  const webWatchIdRef = useRef<number | null>(null);
 
   // Fetch voice setting on mount
   useEffect(() => {
