@@ -78,22 +78,49 @@ export default function TimeIn() {
 
   // ─── Init: Camera + GPS + face-api ───────────────────────────────────────
   useEffect(() => {
-    // Silent GPS
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(
-        pos => {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          setLocation({ lat, lng });
-          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`)
-            .then(r => r.json())
-            .then(d => setAddress(d.display_name || ""))
-            .catch(() => {});
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-      );
-    }
+    // Continuous high-accuracy GPS watcher (native uses FusedLocationProvider via Capacitor)
+    let lastGeocodeTs = 0;
+    const handlePos = (lat: number, lng: number, acc: number) => {
+      setLocation({ lat, lng });
+      setAccuracy(acc);
+      // Throttle reverse-geocode to at most every 15s to reduce network usage
+      const nowTs = Date.now();
+      if (nowTs - lastGeocodeTs > 15000) {
+        lastGeocodeTs = nowTs;
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`)
+          .then(r => r.json())
+          .then(d => setAddress(d.display_name || ""))
+          .catch(() => {});
+      }
+    };
+
+    (async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await Geolocation.requestPermissions();
+          const id = await Geolocation.watchPosition(
+            { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
+            (pos, err) => {
+              if (err || !pos) return;
+              handlePos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? 9999);
+            }
+          );
+          capWatchIdRef.current = id;
+          return;
+        } catch (e) {
+          console.warn("Capacitor Geolocation failed, falling back to web geolocation", e);
+        }
+      }
+      if (navigator.geolocation) {
+        const id = navigator.geolocation.watchPosition(
+          pos => handlePos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? 9999),
+          () => {},
+          { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+        );
+        webWatchIdRef.current = id;
+      }
+    })();
+
 
     // Start camera immediately
     (async () => {
