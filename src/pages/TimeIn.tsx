@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { offlineExecute } from "@/lib/offlineDb";
 import { CheckCircle, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { AttendanceDebugPanel } from "@/components/attendance/AttendanceDebugPanel";
 
 type Mode = "in" | "out";
 type Phase = "active" | "success";
@@ -542,6 +544,39 @@ export default function TimeIn() {
     const employeeCodeStr = "ABL-" + code.padStart(5, "0");
 
     try {
+      if (!navigator.onLine) {
+        // AUTOMATIC RECOVERY: Save Locally if offline
+        const localId = crypto.randomUUID();
+        const dateStr = new Date().toISOString().split("T")[0];
+        
+        await offlineExecute(`
+          INSERT INTO attendance (
+            id, employee_id, employee_name, employee_code, attendance_date,
+            attendance_type, time_in, time_out, selfie_image_path,
+            latitude, longitude, gps_accuracy, exact_address, sync_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        `, [
+          localId, employeeId, employeeName, employeeCodeStr, dateStr,
+          selectedMode, selectedMode === 'in' ? deviceTimestamp : null, selectedMode === 'out' ? deviceTimestamp : null,
+          photoUrl, preciseLocation.latitude, preciseLocation.longitude, preciseLocation.accuracy, preciseAddress, deviceTimestamp, deviceTimestamp
+        ]);
+
+        const timeStr = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
+        if (selectedMode === "in") speakAnnouncement("in", employeeName, employeeCodeStr, timeStr);
+        else speakAnnouncement("out", employeeName, employeeCodeStr, timeStr);
+
+        setSuccessInfo({ name: employeeName, time: timeStr + " (Saved Offline)", mode: selectedMode });
+        setPhase("success");
+
+        setTimeout(() => {
+          setPhase("active");
+          resetKiosk();
+          setSuccessInfo(null);
+          setSubmitting(false);
+        }, 3000);
+        return;
+      }
+
       const { data, error } = await supabase.rpc("kiosk_punch_v2", {
         _employee_id: employeeId,
         _mode: selectedMode,
@@ -578,15 +613,46 @@ export default function TimeIn() {
       }, 3000);
     } catch (e: any) {
       console.error("Attendance RPC Error:", e);
-      // Fallback: If the migration with 10 parameters isn't run, try the old 6 parameter signature so attendance is still saved.
+      // Try to parse exactly why it failed
+      let reason = "Unknown Error";
+      if (e.message?.includes("kiosk_punch_v2") || e.message?.includes("Could not find the function")) {
+          // It's a fallback logic path that failed
+      }
+      
+      if (!navigator.onLine) {
+        reason = "Network Unavailable";
+      } else if (e.message?.includes("timeout") || e.message?.includes("network")) {
+        reason = "Supabase Connection Failed";
+      } else if (e.message?.includes("Face")) {
+        reason = "Face Detection Failed";
+      } else if (e.message?.includes("already") || e.message?.includes("exists")) {
+        reason = "Attendance Already Exists";
+      } else if (e.message?.includes("SQLite")) {
+        reason = "SQLite Database Error";
+      } else {
+        reason = e.message || "Failed to process attendance";
+      }
+      
+      const { errorLogger } = await import('@/services/ErrorLoggingService');
+      await errorLogger.log({
+        module: "Attendance",
+        functionName: "submitPunch",
+        errorMessage: e.message || "Unknown Error",
+        stackTrace: e.stack || "",
+        employeeId: employeeId,
+        gpsStatus: gpsStatus || "Unknown",
+        severity: "high"
+      });
+
+      // Fallback: If the migration with 10 parameters isn't run, try the old kiosk_punch RPC signature.
       if (e.message?.includes("Could not find the function") || e.message?.includes("kiosk_punch_v2")) {
         try {
-          const { data, error } = await supabase.rpc("kiosk_punch_v2", {
-            _employee_id: employeeId,
+          const { data, error } = await supabase.rpc("kiosk_punch", {
+            _code: employeeCodeStr,
             _mode: selectedMode,
             _latitude: location?.lat ?? null,
             _longitude: location?.lng ?? null,
-            _photo_url: photoUrl,
+            _selfie: photoUrl,
             _address: address || null,
           });
           if (!error && (data as any)?.ok) {
@@ -603,13 +669,30 @@ export default function TimeIn() {
               setSubmitting(false);
             }, 3000);
             return;
+          } else {
+            if (error) {
+               await errorLogger.log({
+                module: "Attendance",
+                functionName: "submitPunch (fallback)",
+                errorMessage: error.message || "Fallback error",
+                employeeId: employeeId,
+                severity: "high"
+              });
+            }
           }
-        } catch (fallbackError) {
+        } catch (fallbackError: any) {
           console.error("Fallback RPC Error:", fallbackError);
+          await errorLogger.log({
+            module: "Attendance",
+            functionName: "submitPunch (fallback block)",
+            errorMessage: fallbackError.message || "Unknown Fallback error",
+            employeeId: employeeId,
+            severity: "high"
+          });
         }
       }
       
-      toast.error("Attendance save failed. Please try again.");
+      toast.error(`Unable to save attendance.\nReason: ${reason}`);
       setSubmitting(false);
     }
   };
@@ -769,6 +852,8 @@ export default function TimeIn() {
           </div>
         </>
       )}
+
+      <AttendanceDebugPanel employeeId={employeeId} address={address} location={location} faceDetected={faceDetected} />
 
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes shake {

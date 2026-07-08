@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { syncAllData } from "@/lib/syncEngine";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { Progress } from "@/components/ui/progress";
+import { SystemLogsTab } from "@/components/settings/SystemLogsTab";
 
 
 
@@ -310,6 +311,7 @@ export default function Settings() {
           <TabsTrigger value="sync">Sync</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           <TabsTrigger value="updates">Application Updates</TabsTrigger>
+          <TabsTrigger value="logs">System Logs</TabsTrigger>
         </TabsList>
 
         {/* ─── General Settings ─────────────────────────────────────── */}
@@ -1028,6 +1030,11 @@ export default function Settings() {
               </div>
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        {/* ─── System Logs ───────────────────────────────────────────── */}
+        <TabsContent value="logs" className="mt-0">
+          <SystemLogsTab />
         </TabsContent>
       </Tabs>
     </div>

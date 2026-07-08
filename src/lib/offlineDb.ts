@@ -158,6 +158,26 @@ export const initOfflineDb = async (): Promise<void> => {
           details TEXT,
           created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS system_logs (
+          id TEXT PRIMARY KEY,
+          module TEXT,
+          function_name TEXT,
+          error_message TEXT,
+          stack_trace TEXT,
+          user_id TEXT,
+          employee_id TEXT,
+          device TEXT,
+          os_version TEXT,
+          browser TEXT,
+          internet_status TEXT,
+          gps_status TEXT,
+          sqlite_status TEXT,
+          supabase_status TEXT,
+          sync_status TEXT,
+          severity TEXT,
+          created_at TEXT
+        );
       `);
       console.log("Offline Database: Capacitor SQLite initialized.");
     } catch (err) {
