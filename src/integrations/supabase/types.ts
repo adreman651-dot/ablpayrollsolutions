@@ -660,55 +660,25 @@ export type Database = {
         }
         Returns: Json
       }
-      kiosk_punch_v2:
-        | {
-            Args: {
-              _address?: string
-              _employee_id: string
-              _latitude?: number
-              _longitude?: number
-              _mode: string
-              _photo_url?: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              _address?: string
-              _device_timestamp?: string
-              _device_type?: string
-              _employee_code?: string
-              _employee_id: string
-              _employee_name?: string
-              _face_detection_enabled?: boolean
-              _face_match_percentage?: number
-              _face_verified?: boolean
-              _latitude?: number
-              _longitude?: number
-              _mode: string
-              _photo_url?: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              _address?: string
-              _device_timestamp?: string
-              _device_type?: string
-              _employee_code?: string
-              _employee_id: string
-              _employee_name?: string
-              _face_detection_enabled?: boolean
-              _face_match_percentage?: number
-              _face_verified?: boolean
-              _gps_accuracy?: number
-              _latitude?: number
-              _longitude?: number
-              _mode: string
-              _photo_url?: string
-            }
-            Returns: Json
-          }
+      kiosk_punch_v2: {
+        Args: {
+          _address?: string
+          _device_timestamp?: string
+          _device_type?: string
+          _employee_code?: string
+          _employee_id: string
+          _employee_name?: string
+          _face_detection_enabled?: boolean
+          _face_match_percentage?: number
+          _face_verified?: boolean
+          _gps_accuracy?: number
+          _latitude?: number
+          _longitude?: number
+          _mode: string
+          _photo_url?: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin" | "hr" | "payroll_officer" | "employee"
