@@ -26,6 +26,8 @@ interface AttendanceRecord {
   longitude_out: number | null;
   location_label_in: string | null;
   location_label_out: string | null;
+  gps_accuracy_in: number | null;
+  gps_accuracy_out: number | null;
   status: string | null;
   total_hours: number | null;
   employee_code: string | null;
@@ -58,6 +60,11 @@ export default function Attendance() {
     time_in: '',
     time_out: '',
     location_label_in: '',
+    location_label_out: '',
+    latitude_in: '',
+    longitude_in: '',
+    latitude_out: '',
+    longitude_out: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -100,6 +107,11 @@ export default function Attendance() {
       time_in: toLocalInput(r.time_in),
       time_out: toLocalInput(r.time_out),
       location_label_in: r.location_label_in || '',
+      location_label_out: r.location_label_out || '',
+      latitude_in: r.latitude_in != null ? String(r.latitude_in) : '',
+      longitude_in: r.longitude_in != null ? String(r.longitude_in) : '',
+      latitude_out: r.latitude_out != null ? String(r.latitude_out) : '',
+      longitude_out: r.longitude_out != null ? String(r.longitude_out) : '',
       notes: '',
     });
   };
@@ -129,11 +141,18 @@ export default function Attendance() {
         }
       }
 
+      const parseNum = (v: string) => v.trim() === '' ? null : (isNaN(Number(v)) ? null : Number(v));
+
       const updates: any = {
         date: editForm.date,
         time_in: timeInISO,
         time_out: timeOutISO,
         location_label_in: editForm.location_label_in || null,
+        location_label_out: editForm.location_label_out || null,
+        latitude_in: parseNum(editForm.latitude_in),
+        longitude_in: parseNum(editForm.longitude_in),
+        latitude_out: parseNum(editForm.latitude_out),
+        longitude_out: parseNum(editForm.longitude_out),
         late_minutes: lateMinutes,
         status: lateMinutes > 0 ? 'Late' : (timeInISO ? 'On Time' : editModal.status),
       };
@@ -303,17 +322,43 @@ export default function Attendance() {
                   <TableCell>
                     {r.time_in ? new Date(r.time_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
                     {r.location_label_in && (
-                       <div className="text-[10px] text-muted-foreground truncate max-w-[150px] flex items-center gap-1 mt-1" title={r.location_label_in}>
+                       <div className="text-[10px] text-muted-foreground truncate max-w-[180px] flex items-center gap-1 mt-1" title={r.location_label_in}>
                          <MapPin className="w-3 h-3" /> {r.location_label_in}
                        </div>
+                    )}
+                    {(r.latitude_in != null && r.longitude_in != null) && (
+                      <div className="text-[10px] mt-0.5 flex items-center gap-2">
+                        <span className="text-muted-foreground">
+                          {r.latitude_in.toFixed(5)}, {r.longitude_in.toFixed(5)}
+                          {r.gps_accuracy_in != null && ` · ±${Math.round(r.gps_accuracy_in)}m`}
+                        </span>
+                        <a
+                          href={`https://www.google.com/maps?q=${r.latitude_in},${r.longitude_in}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >Map</a>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>
                     {r.time_out ? new Date(r.time_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
                     {r.location_label_out && (
-                       <div className="text-[10px] text-muted-foreground truncate max-w-[150px] flex items-center gap-1 mt-1" title={r.location_label_out}>
+                       <div className="text-[10px] text-muted-foreground truncate max-w-[180px] flex items-center gap-1 mt-1" title={r.location_label_out}>
                          <MapPin className="w-3 h-3" /> {r.location_label_out}
                        </div>
+                    )}
+                    {(r.latitude_out != null && r.longitude_out != null) && (
+                      <div className="text-[10px] mt-0.5 flex items-center gap-2">
+                        <span className="text-muted-foreground">
+                          {r.latitude_out.toFixed(5)}, {r.longitude_out.toFixed(5)}
+                          {r.gps_accuracy_out != null && ` · ±${Math.round(r.gps_accuracy_out)}m`}
+                        </span>
+                        <a
+                          href={`https://www.google.com/maps?q=${r.latitude_out},${r.longitude_out}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >Map</a>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
@@ -407,7 +452,7 @@ export default function Attendance() {
       {/* Edit Modal */}
       {isAdminOrHR && (
         <Dialog open={!!editModal} onOpenChange={(open) => { if (!open) setEditModal(null); }}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Attendance Record</DialogTitle>
             </DialogHeader>
@@ -419,43 +464,40 @@ export default function Attendance() {
               )}
               <div className="space-y-1">
                 <Label>Date</Label>
-                <Input
-                  type="date"
-                  value={editForm.date}
-                  onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
-                />
+                <Input type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
               </div>
-              <div className="space-y-1">
-                <Label>Time In</Label>
-                <Input
-                  type="datetime-local"
-                  value={editForm.time_in}
-                  onChange={e => setEditForm(f => ({ ...f, time_in: e.target.value }))}
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Time In</Label>
+                  <Input type="datetime-local" value={editForm.time_in} onChange={e => setEditForm(f => ({ ...f, time_in: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Time Out</Label>
+                  <Input type="datetime-local" value={editForm.time_out} onChange={e => setEditForm(f => ({ ...f, time_out: e.target.value }))} />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label>Time Out</Label>
-                <Input
-                  type="datetime-local"
-                  value={editForm.time_out}
-                  onChange={e => setEditForm(f => ({ ...f, time_out: e.target.value }))}
-                />
+
+              <div className="border-t pt-3 space-y-3">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">Time In Location</div>
+                <Input value={editForm.location_label_in} onChange={e => setEditForm(f => ({ ...f, location_label_in: e.target.value }))} placeholder="Exact address (In)" />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input value={editForm.latitude_in} onChange={e => setEditForm(f => ({ ...f, latitude_in: e.target.value }))} placeholder="Latitude" />
+                  <Input value={editForm.longitude_in} onChange={e => setEditForm(f => ({ ...f, longitude_in: e.target.value }))} placeholder="Longitude" />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label>Location Label (In)</Label>
-                <Input
-                  value={editForm.location_label_in}
-                  onChange={e => setEditForm(f => ({ ...f, location_label_in: e.target.value }))}
-                  placeholder="e.g. Office, Branch A"
-                />
+
+              <div className="border-t pt-3 space-y-3">
+                <div className="text-xs font-semibold uppercase text-muted-foreground">Time Out Location</div>
+                <Input value={editForm.location_label_out} onChange={e => setEditForm(f => ({ ...f, location_label_out: e.target.value }))} placeholder="Exact address (Out)" />
+                <div className="grid grid-cols-2 gap-3">
+                  <Input value={editForm.latitude_out} onChange={e => setEditForm(f => ({ ...f, latitude_out: e.target.value }))} placeholder="Latitude" />
+                  <Input value={editForm.longitude_out} onChange={e => setEditForm(f => ({ ...f, longitude_out: e.target.value }))} placeholder="Longitude" />
+                </div>
               </div>
+
               <div className="space-y-1">
                 <Label>Notes</Label>
-                <Input
-                  value={editForm.notes}
-                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                  placeholder="Optional admin note"
-                />
+                <Input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional admin note" />
               </div>
             </div>
             <DialogFooter>

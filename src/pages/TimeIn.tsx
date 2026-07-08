@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { offlineExecute } from "@/lib/offlineDb";
-import { CheckCircle, ArrowLeft } from "lucide-react";
+import { CheckCircle, ArrowLeft, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { AttendanceDebugPanel } from "@/components/attendance/AttendanceDebugPanel";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 
 type Mode = "in" | "out";
 type Phase = "active" | "success";
@@ -46,6 +48,7 @@ export default function TimeIn() {
   const [now, setNow] = useState(new Date());
   const [submitting, setSubmitting] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
   const [address, setAddress] = useState<string>("");
   const [mode, setMode] = useState<Mode | null>(routeMode);
   const [cameraReady, setCameraReady] = useState(false);
@@ -63,6 +66,8 @@ export default function TimeIn() {
 
   const detectionIntervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const capWatchIdRef = useRef<string | null>(null);
+  const webWatchIdRef = useRef<number | null>(null);
 
   // Fetch voice setting on mount
   useEffect(() => {
@@ -74,22 +79,49 @@ export default function TimeIn() {
 
   // ─── Init: Camera + GPS + face-api ───────────────────────────────────────
   useEffect(() => {
-    // Silent GPS
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(
-        pos => {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          setLocation({ lat, lng });
-          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`)
-            .then(r => r.json())
-            .then(d => setAddress(d.display_name || ""))
-            .catch(() => {});
-        },
-        () => {},
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-      );
-    }
+    // Continuous high-accuracy GPS watcher (native uses FusedLocationProvider via Capacitor)
+    let lastGeocodeTs = 0;
+    const handlePos = (lat: number, lng: number, acc: number) => {
+      setLocation({ lat, lng });
+      setAccuracy(acc);
+      // Throttle reverse-geocode to at most every 15s to reduce network usage
+      const nowTs = Date.now();
+      if (nowTs - lastGeocodeTs > 15000) {
+        lastGeocodeTs = nowTs;
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`)
+          .then(r => r.json())
+          .then(d => setAddress(d.display_name || ""))
+          .catch(() => {});
+      }
+    };
+
+    (async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await Geolocation.requestPermissions();
+          const id = await Geolocation.watchPosition(
+            { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
+            (pos, err) => {
+              if (err || !pos) return;
+              handlePos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? 9999);
+            }
+          );
+          capWatchIdRef.current = id;
+          return;
+        } catch (e) {
+          console.warn("Capacitor Geolocation failed, falling back to web geolocation", e);
+        }
+      }
+      if (navigator.geolocation) {
+        const id = navigator.geolocation.watchPosition(
+          pos => handlePos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? 9999),
+          () => {},
+          { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+        );
+        webWatchIdRef.current = id;
+      }
+    })();
+
 
     // Start camera immediately
     (async () => {
@@ -426,59 +458,81 @@ export default function TimeIn() {
   };
 
   // ─── High-accuracy GPS ────────────────────────────────────────────────────
-  const getPreciseLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number }> => {
+  // Waits for a fresh GPS fix ≤ REQUIRED_ACC meters (preferred ≤ PREFERRED_ACC).
+  // Returns null if no acceptable fix is obtained within MAX_WAIT_MS.
+  const getPreciseLocation = (): Promise<{ latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number } | null> => {
+    const REQUIRED_ACC = 20;   // meters — hard gate
+    const PREFERRED_ACC = 10;  // meters — resolve immediately
+    const MAX_WAIT_MS = 30000; // 30s per spec
+    const isNative = Capacitor.isNativePlatform();
+
     return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve({ latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
+      let best: { latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number } | null = null;
+      let resolved = false;
+      let webWatchId: number | null = null;
+      let capWatchId: string | null = null;
+
+      const finish = (value: typeof best) => {
+        if (resolved) return;
+        resolved = true;
+        try {
+          if (webWatchId !== null) navigator.geolocation.clearWatch(webWatchId);
+        } catch {}
+        if (capWatchId) {
+          Geolocation.clearWatch({ id: capWatchId }).catch(() => {});
+        }
+        setGpsStatus(null);
+        // Only accept fixes better than the hard gate; otherwise return null.
+        if (value && value.accuracy <= REQUIRED_ACC) resolve(value);
+        else resolve(null);
+      };
+
+      const onFix = (lat: number, lng: number, acc: number, alt: number | null, ts: number) => {
+        setAccuracy(acc);
+        setLocation({ lat, lng });
+        setGpsStatus(`Waiting for a more accurate GPS signal… ${Math.round(acc)}m (need ≤ ${REQUIRED_ACC}m)`);
+        if (!best || acc < best.accuracy) {
+          best = { latitude: lat, longitude: lng, accuracy: acc, altitude: alt, timestamp: ts };
+        }
+        if (acc <= PREFERRED_ACC) finish(best);
+      };
+
+      if (isNative) {
+        Geolocation.watchPosition(
+          { enableHighAccuracy: true, timeout: MAX_WAIT_MS, maximumAge: 0 },
+          (pos, err) => {
+            if (err || !pos) return;
+            onFix(
+              pos.coords.latitude,
+              pos.coords.longitude,
+              pos.coords.accuracy ?? 9999,
+              pos.coords.altitude ?? null,
+              pos.timestamp
+            );
+          }
+        ).then((id) => { capWatchId = id; }).catch(() => {});
+      } else if (navigator.geolocation) {
+        webWatchId = navigator.geolocation.watchPosition(
+          (pos) => onFix(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            pos.coords.accuracy ?? 9999,
+            pos.coords.altitude ?? null,
+            pos.timestamp
+          ),
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 0, timeout: MAX_WAIT_MS }
+        );
+      } else {
+        finish(null);
         return;
       }
 
-      let best: { latitude: number; longitude: number; accuracy: number; altitude: number | null; timestamp: number } | null = null;
-      let resolved = false;
-
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const acc = pos.coords.accuracy;
-          setGpsStatus(`Acquiring GPS… accuracy: ${Math.round(acc)}m`);
-          if (!best || acc < best.accuracy) {
-            best = {
-              latitude: pos.coords.latitude,
-              longitude: pos.coords.longitude,
-              accuracy: acc,
-              altitude: pos.coords.altitude,
-              timestamp: pos.timestamp,
-            };
-          }
-          if (acc <= 20 && !resolved) {
-            resolved = true;
-            navigator.geolocation.clearWatch(watchId);
-            setGpsStatus(null);
-            resolve(best);
-          }
-        },
-        () => {
-          // On error, resolve with last known location
-          if (!resolved) {
-            resolved = true;
-            navigator.geolocation.clearWatch(watchId);
-            setGpsStatus(null);
-            resolve(best ?? { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
-          }
-        },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
-      );
-
-      // Timeout after 12 seconds — resolve with best available
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          navigator.geolocation.clearWatch(watchId);
-          setGpsStatus(null);
-          resolve(best ?? { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null, timestamp: Date.now() });
-        }
-      }, 12000);
+      // After MAX_WAIT_MS accept best if within REQUIRED_ACC, else give up.
+      setTimeout(() => finish(best), MAX_WAIT_MS);
     });
   };
+
 
   const reverseGeocode = async (lat: number, lng: number, accuracy: number): Promise<string> => {
     try {
@@ -522,24 +576,30 @@ export default function TimeIn() {
     setSubmitting(true);
     setMode(selectedMode);
 
+    // Acquire high-accuracy GPS FIRST — reject punch if we can't get ≤ 20m.
+    setGpsStatus('Waiting for a more accurate GPS signal…');
+    const preciseLocation = await getPreciseLocation();
+    if (!preciseLocation) {
+      toast.error("Could not acquire an accurate GPS location (need ≤ 20m). Please move to an open area and try again.");
+      playErrorBeep();
+      setGpsStatus(null);
+      setSubmitting(false);
+      return;
+    }
+
     const selfieBase64 = captureSelfie();
     let photoUrl: string | null = null;
     if (selfieBase64) photoUrl = await uploadSelfie(selfieBase64, employeeId);
 
-    // Acquire high-accuracy GPS + reverse geocode
-    setGpsStatus('Acquiring GPS…');
-    let preciseLocation = { latitude: location?.lat ?? 0, longitude: location?.lng ?? 0, accuracy: 999, altitude: null as number | null, timestamp: Date.now() };
-    let preciseAddress = address || null;
+    let preciseAddress: string | null = null;
     try {
-      preciseLocation = await getPreciseLocation();
       preciseAddress = await reverseGeocode(preciseLocation.latitude, preciseLocation.longitude, preciseLocation.accuracy);
-    } catch (gpsErr) {
-      console.warn('GPS acquire failed, using last known', gpsErr);
-      setGpsStatus(null);
+    } catch {
+      preciseAddress = address || null;
     }
 
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const deviceType = isMobile ? "Mobile" : "Desktop";
+    const deviceType = Capacitor.isNativePlatform() ? "Android" : (isMobile ? "Mobile" : "Desktop");
     const deviceTimestamp = new Date().toISOString();
     const employeeCodeStr = "ABL-" + code.padStart(5, "0");
 
@@ -580,8 +640,8 @@ export default function TimeIn() {
       const { data, error } = await supabase.rpc("kiosk_punch_v2", {
         _employee_id: employeeId,
         _mode: selectedMode,
-        _latitude: preciseLocation.latitude || null,
-        _longitude: preciseLocation.longitude || null,
+        _latitude: preciseLocation.latitude,
+        _longitude: preciseLocation.longitude,
         _photo_url: photoUrl,
         _address: preciseAddress || null,
         _employee_code: employeeCodeStr,
@@ -591,6 +651,7 @@ export default function TimeIn() {
         _face_verified: empFaceEnabled ? (faceMatchPct !== null && faceMatchPct >= 85) : null,
         _face_match_percentage: faceMatchPct,
         _face_detection_enabled: empFaceEnabled,
+        _gps_accuracy: preciseLocation.accuracy,
       } as any);
 
       if (error) throw error;
@@ -755,6 +816,27 @@ export default function TimeIn() {
 
       {phase === "active" && (
         <>
+          {/* Live GPS panel (bottom-left) */}
+          <div className="fixed bottom-4 left-4 z-[25] max-w-xs text-[11px] leading-tight rounded-lg bg-black/60 backdrop-blur border border-white/10 p-2 text-white/90 pointer-events-none"
+            style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}>
+            <div className="flex items-center gap-1 font-semibold text-white">
+              <MapPin className="w-3 h-3" />
+              GPS
+              <span className={
+                accuracy === null ? "text-white/60"
+                : accuracy <= 10 ? "text-emerald-400"
+                : accuracy <= 20 ? "text-yellow-300"
+                : "text-red-400"
+              }>
+                {accuracy === null ? "acquiring…" : accuracy <= 10 ? "Excellent" : accuracy <= 20 ? "Good" : "Poor"}
+              </span>
+            </div>
+            <div>Lat: {location ? location.lat.toFixed(6) : "—"}</div>
+            <div>Lng: {location ? location.lng.toFixed(6) : "—"}</div>
+            <div>Accuracy: {accuracy !== null ? `${Math.round(accuracy)} m` : "—"}</div>
+            <div className="truncate max-w-[260px]" title={address}>Addr: {address || "—"}</div>
+          </div>
+
           {/* LAYER 3: Top info bar */}
           <div className="fixed top-0 left-0 right-0 z-[10] flex flex-col items-center pt-10 pb-4 pointer-events-none"
             style={{ textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>
