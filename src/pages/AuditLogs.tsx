@@ -16,6 +16,9 @@ export default function AuditLogs() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [overrides, setOverrides] = useState<any[]>([]);
+  const [overrideSearch, setOverrideSearch] = useState("");
+  const [overridesLoading, setOverridesLoading] = useState(true);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -35,9 +38,69 @@ export default function AuditLogs() {
     }
   };
 
-  useEffect(() => {
-    fetchLogs();
-  }, [search]);
+  const fetchOverrides = async () => {
+    setOverridesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('attendance_overrides')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      setOverrides(data || []);
+    } catch (e) {
+      console.warn('Overrides fetch failed', e);
+    } finally {
+      setOverridesLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchLogs(); }, [search]);
+  useEffect(() => { fetchOverrides(); }, []);
+
+  const filteredOverrides = overrides.filter(o => {
+    if (!overrideSearch) return true;
+    const s = overrideSearch.toLowerCase();
+    return (o.employee_name || '').toLowerCase().includes(s)
+      || (o.reason || '').toLowerCase().includes(s)
+      || (o.modified_by_email || '').toLowerCase().includes(s);
+  });
+
+  const exportOverridesExcel = () => {
+    try {
+      const ws = XLSX.utils.json_to_sheet(filteredOverrides);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "AttendanceOverrides");
+      XLSX.writeFile(wb, `abl_attendance_overrides_${Date.now()}.xlsx`);
+      toast.success("Attendance overrides exported.");
+    } catch (e: any) { toast.error("Export failed: " + e.message); }
+  };
+
+  const exportOverridesPdf = () => {
+    try {
+      const doc = new jsPDF({ orientation: 'landscape' });
+      doc.text('Attendance Override History', 14, 14);
+      autoTable(doc, {
+        startY: 20,
+        head: [['Date', 'Employee', 'Old Time In', 'New Time In', 'Old Time Out', 'New Time Out', 'Reason', 'By', 'Platform']],
+        body: filteredOverrides.map(o => [
+          new Date(o.created_at).toLocaleString(),
+          o.employee_name || '',
+          o.original_time_in ? new Date(o.original_time_in).toLocaleString() : '',
+          o.new_time_in ? new Date(o.new_time_in).toLocaleString() : '',
+          o.original_time_out ? new Date(o.original_time_out).toLocaleString() : '',
+          o.new_time_out ? new Date(o.new_time_out).toLocaleString() : '',
+          o.reason || '',
+          o.modified_by_email || '',
+          o.platform || '',
+        ]),
+        styles: { fontSize: 7 },
+      });
+      doc.save(`abl_attendance_overrides_${Date.now()}.pdf`);
+      toast.success("Attendance overrides PDF exported.");
+    } catch (e: any) { toast.error("Export failed: " + e.message); }
+  };
+
 
   const handleExportExcel = () => {
     try {
