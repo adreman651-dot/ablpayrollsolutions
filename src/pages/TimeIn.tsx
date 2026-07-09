@@ -381,15 +381,32 @@ export default function TimeIn() {
 
     // Check today's attendance using public RPC
     const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employee.id });
-    
-    // Check if employee already timed in AND timed out today
-    if (attData && (attData as any).time_in && (attData as any).time_out) {
+    const att: any = attData || {};
+
+    // Attendance already completed today
+    if (att.time_in && att.time_out) {
       speakAnnouncement("complete", fullName, padded);
-      toast.error("Attendance already completed for today.");
+      toast.error("Attendance Already Completed\nYou have already completed your Time Out for today. Thank you.");
       triggerShake();
-      setCode("");
-      setEmployeeName("");
-      setEmployeeId("");
+      setCode(""); setEmployeeName(""); setEmployeeId("");
+      setSubmitting(false);
+      return;
+    }
+
+    // Route-locked duplicate guards
+    if (routeMode === "in" && att.time_in) {
+      const { playVoice } = await import("@/lib/voiceService");
+      playVoice("Attendance already recorded for today.", undefined, "voice_error_enabled");
+      toast.error("Attendance Already Recorded\nYou have already completed your Time In for today. Thank you.");
+      triggerShake();
+      setCode(""); setEmployeeName(""); setEmployeeId("");
+      setSubmitting(false);
+      return;
+    }
+    if (routeMode === "out" && !att.time_in) {
+      toast.error("No Time In record found for today. Please Time In first.");
+      triggerShake();
+      setCode(""); setEmployeeName(""); setEmployeeId("");
       setSubmitting(false);
       return;
     }
