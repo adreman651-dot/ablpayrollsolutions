@@ -430,7 +430,7 @@ export default function Attendance() {
                     </TableCell>
                     <TableCell className="text-center">
                       <SelfieThumb
-                        src={r.photo_in_url}
+                        src={r.photo_in_url || (r as any).selfie_url || (r as any).selfie_image_path}
                         alt="Time In Selfie"
                         onClick={() => setSelfieModal({ record: r, type: 'in' })}
                         className="w-12 h-12 mx-auto"
@@ -438,7 +438,7 @@ export default function Attendance() {
                     </TableCell>
                     <TableCell className="text-center">
                       <SelfieThumb
-                        src={r.photo_out_url}
+                        src={r.photo_out_url || ((r.time_out && !r.photo_out_url && !r.photo_in_url) ? ((r as any).selfie_url || (r as any).selfie_image_path) : null)}
                         alt="Time Out Selfie"
                         onClick={() => setSelfieModal({ record: r, type: 'out' })}
                         className="w-12 h-12 mx-auto"
@@ -497,7 +497,9 @@ export default function Attendance() {
           {selfieModal && (
             <div className="space-y-3">
               <SelfieViewer
-                src={selfieModal.type === 'in' ? selfieModal.record.photo_in_url : selfieModal.record.photo_out_url}
+                src={selfieModal.type === 'in' 
+                  ? (selfieModal.record.photo_in_url || (selfieModal.record as any).selfie_url || (selfieModal.record as any).selfie_image_path)
+                  : (selfieModal.record.photo_out_url || ((selfieModal.record.time_out && !selfieModal.record.photo_out_url && !selfieModal.record.photo_in_url) ? ((selfieModal.record as any).selfie_url || (selfieModal.record as any).selfie_image_path) : null))}
                 label={selfieModal.type === 'in' ? 'TIME IN' : 'TIME OUT'}
               />
               <div className="text-[11px] text-muted-foreground p-2 bg-muted/50 rounded space-y-1">

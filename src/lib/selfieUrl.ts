@@ -11,19 +11,37 @@ const EXPIRES_IN = 3600; // 1 hour signed URL
 export async function getSelfieUrl(ref: string | null | undefined): Promise<string | null> {
   if (!ref) return null;
   
-  // Legacy: already a full URL
-  if (/^https?:\/\//i.test(ref)) return ref;
-  
+  let cleanRef = ref.trim();
+
   // Data URL
-  if (ref.startsWith("data:")) return ref;
+  if (cleanRef.startsWith("data:")) return cleanRef;
+
+  // Extract from full Supabase URL if present (to handle expired signed URLs or private public URLs)
+  try {
+    const urlObj = new URL(cleanRef);
+    if (urlObj.pathname.includes('/storage/v1/object/')) {
+      const parts = urlObj.pathname.split('/');
+      const selfiesIdx = parts.indexOf('selfies');
+      if (selfiesIdx !== -1) {
+        cleanRef = parts.slice(selfiesIdx + 1).join('/');
+      } else {
+        // Not in 'selfies' bucket but still a full URL? Return as is.
+        return ref;
+      }
+    } else {
+      // Some other full URL (e.g. external hosting), just return it
+      return ref;
+    }
+  } catch (e) {
+    // Not a valid full URL, proceed with path parsing
+  }
   
   // Fix for paths that accidentally included the bucket name or a leading slash
-  let cleanRef = ref.trim();
   if (cleanRef.startsWith("/")) {
     cleanRef = cleanRef.substring(1);
   }
   if (cleanRef.startsWith("selfies/")) {
-    cleanRef = cleanRef.replace("selfies/", "");
+    cleanRef = cleanRef.substring(8);
   }
 
   const now = Date.now();
@@ -45,3 +63,4 @@ export async function getSelfieUrl(ref: string | null | undefined): Promise<stri
     return null;
   }
 }
+
