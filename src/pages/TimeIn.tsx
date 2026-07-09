@@ -702,7 +702,20 @@ export default function TimeIn() {
 
       if (error) throw error;
       const res = data as any;
-      if (!res?.ok) throw new Error(res?.error || "Punch failed");
+      if (!res?.ok) {
+        if (res?.code === 'ALREADY_TIMED_IN' || res?.code === 'ALREADY_TIMED_OUT') {
+          const msg = res.code === 'ALREADY_TIMED_IN'
+            ? "Attendance Already Recorded\nYou have already completed your Time In for today. Thank you."
+            : "Attendance Already Completed\nYou have already completed your Time Out for today. Thank you.";
+          const { playVoice } = await import("@/lib/voiceService");
+          playVoice("Attendance already completed for today.", undefined, "voice_error_enabled");
+          toast.error(msg);
+          triggerShake();
+          setSubmitting(false);
+          return;
+        }
+        throw new Error(res?.error || "Punch failed");
+      }
 
       const timeStr = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
       
