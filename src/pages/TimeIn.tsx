@@ -463,11 +463,13 @@ export default function TimeIn() {
     try {
       const res = await fetch(base64);
       const blob = await res.blob();
-      const filename = `${empId}_${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from("selfies").upload(filename, blob, { contentType: "image/jpeg" });
+      // Secure obfuscated filename under per-employee folder, private bucket
+      const uuid = (crypto as any).randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const path = `${empId}/${uuid}_${Date.now()}.jpg`;
+      const { error } = await supabase.storage.from("selfies").upload(path, blob, { contentType: "image/jpeg", upsert: false });
       if (error) throw error;
-      const { data } = supabase.storage.from("selfies").getPublicUrl(filename);
-      return data.publicUrl;
+      // Store the storage path (not a public URL). Consumers generate signed URLs on demand.
+      return path;
     } catch (e) {
       console.error("Selfie upload failed", e);
       return null;
