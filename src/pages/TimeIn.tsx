@@ -593,6 +593,35 @@ export default function TimeIn() {
     setSubmitting(true);
     setMode(selectedMode);
 
+    // Pre-check today's attendance to avoid capturing GPS/selfie for duplicates
+    try {
+      const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employeeId });
+      const att: any = attData || {};
+      if (selectedMode === "in" && att.time_in) {
+        const { playVoice } = await import("@/lib/voiceService");
+        playVoice("Attendance already recorded for today.", undefined, "voice_error_enabled");
+        toast.error("Attendance Already Recorded\nYou have already completed your Time In for today. Thank you.");
+        triggerShake();
+        setSubmitting(false);
+        return;
+      }
+      if (selectedMode === "out" && att.time_out) {
+        const { playVoice } = await import("@/lib/voiceService");
+        playVoice("Attendance already completed for today.", undefined, "voice_error_enabled");
+        toast.error("Attendance Already Completed\nYou have already completed your Time Out for today. Thank you.");
+        triggerShake();
+        setSubmitting(false);
+        return;
+      }
+      if (selectedMode === "out" && !att.time_in) {
+        toast.error("No Time In record for today. Please Time In first.");
+        triggerShake();
+        setSubmitting(false);
+        return;
+      }
+    } catch {}
+
+
     // Acquire high-accuracy GPS FIRST — reject punch if we can't get ≤ 20m.
     setGpsStatus('Waiting for a more accurate GPS signal…');
     const preciseLocation = await getPreciseLocation();
