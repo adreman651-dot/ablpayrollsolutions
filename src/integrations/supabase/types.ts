@@ -35,6 +35,7 @@ export type Database = {
           latitude_out: number | null
           location_label_in: string | null
           location_label_out: string | null
+          locked: boolean
           longitude: number | null
           longitude_in: number | null
           longitude_out: number | null
@@ -70,6 +71,7 @@ export type Database = {
           latitude_out?: number | null
           location_label_in?: string | null
           location_label_out?: string | null
+          locked?: boolean
           longitude?: number | null
           longitude_in?: number | null
           longitude_out?: number | null
@@ -105,6 +107,7 @@ export type Database = {
           latitude_out?: number | null
           location_label_in?: string | null
           location_label_out?: string | null
+          locked?: boolean
           longitude?: number | null
           longitude_in?: number | null
           longitude_out?: number | null
@@ -126,6 +129,104 @@ export type Database = {
             columns: ["employee_id"]
             isOneToOne: false
             referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_overrides: {
+        Row: {
+          attendance_id: string | null
+          created_at: string
+          device: string | null
+          employee_id: string | null
+          employee_name: string | null
+          id: string
+          modified_by: string | null
+          modified_by_email: string | null
+          modified_by_role: string | null
+          new_address: string | null
+          new_date: string | null
+          new_latitude: number | null
+          new_longitude: number | null
+          new_selfie_in: string | null
+          new_selfie_out: string | null
+          new_time_in: string | null
+          new_time_out: string | null
+          original_address: string | null
+          original_date: string | null
+          original_latitude: number | null
+          original_longitude: number | null
+          original_selfie_in: string | null
+          original_selfie_out: string | null
+          original_time_in: string | null
+          original_time_out: string | null
+          platform: string | null
+          reason: string
+        }
+        Insert: {
+          attendance_id?: string | null
+          created_at?: string
+          device?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string
+          modified_by?: string | null
+          modified_by_email?: string | null
+          modified_by_role?: string | null
+          new_address?: string | null
+          new_date?: string | null
+          new_latitude?: number | null
+          new_longitude?: number | null
+          new_selfie_in?: string | null
+          new_selfie_out?: string | null
+          new_time_in?: string | null
+          new_time_out?: string | null
+          original_address?: string | null
+          original_date?: string | null
+          original_latitude?: number | null
+          original_longitude?: number | null
+          original_selfie_in?: string | null
+          original_selfie_out?: string | null
+          original_time_in?: string | null
+          original_time_out?: string | null
+          platform?: string | null
+          reason: string
+        }
+        Update: {
+          attendance_id?: string | null
+          created_at?: string
+          device?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string
+          modified_by?: string | null
+          modified_by_email?: string | null
+          modified_by_role?: string | null
+          new_address?: string | null
+          new_date?: string | null
+          new_latitude?: number | null
+          new_longitude?: number | null
+          new_selfie_in?: string | null
+          new_selfie_out?: string | null
+          new_time_in?: string | null
+          new_time_out?: string | null
+          original_address?: string | null
+          original_date?: string | null
+          original_latitude?: number | null
+          original_longitude?: number | null
+          original_selfie_in?: string | null
+          original_selfie_out?: string | null
+          original_time_in?: string | null
+          original_time_out?: string | null
+          platform?: string | null
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_overrides_attendance_id_fkey"
+            columns: ["attendance_id"]
+            isOneToOne: false
+            referencedRelation: "attendance"
             referencedColumns: ["id"]
           },
         ]

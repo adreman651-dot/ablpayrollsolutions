@@ -381,15 +381,32 @@ export default function TimeIn() {
 
     // Check today's attendance using public RPC
     const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employee.id });
-    
-    // Check if employee already timed in AND timed out today
-    if (attData && (attData as any).time_in && (attData as any).time_out) {
+    const att: any = attData || {};
+
+    // Attendance already completed today
+    if (att.time_in && att.time_out) {
       speakAnnouncement("complete", fullName, padded);
-      toast.error("Attendance already completed for today.");
+      toast.error("Attendance Already Completed\nYou have already completed your Time Out for today. Thank you.");
       triggerShake();
-      setCode("");
-      setEmployeeName("");
-      setEmployeeId("");
+      setCode(""); setEmployeeName(""); setEmployeeId("");
+      setSubmitting(false);
+      return;
+    }
+
+    // Route-locked duplicate guards
+    if (routeMode === "in" && att.time_in) {
+      const { playVoice } = await import("@/lib/voiceService");
+      playVoice("Attendance already recorded for today.", undefined, "voice_error_enabled");
+      toast.error("Attendance Already Recorded\nYou have already completed your Time In for today. Thank you.");
+      triggerShake();
+      setCode(""); setEmployeeName(""); setEmployeeId("");
+      setSubmitting(false);
+      return;
+    }
+    if (routeMode === "out" && !att.time_in) {
+      toast.error("No Time In record found for today. Please Time In first.");
+      triggerShake();
+      setCode(""); setEmployeeName(""); setEmployeeId("");
       setSubmitting(false);
       return;
     }
@@ -446,11 +463,13 @@ export default function TimeIn() {
     try {
       const res = await fetch(base64);
       const blob = await res.blob();
-      const filename = `${empId}_${Date.now()}.jpg`;
-      const { error } = await supabase.storage.from("selfies").upload(filename, blob, { contentType: "image/jpeg" });
+      // Secure obfuscated filename under per-employee folder, private bucket
+      const uuid = (crypto as any).randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const path = `${empId}/${uuid}_${Date.now()}.jpg`;
+      const { error } = await supabase.storage.from("selfies").upload(path, blob, { contentType: "image/jpeg", upsert: false });
       if (error) throw error;
-      const { data } = supabase.storage.from("selfies").getPublicUrl(filename);
-      return data.publicUrl;
+      // Store the storage path (not a public URL). Consumers generate signed URLs on demand.
+      return path;
     } catch (e) {
       console.error("Selfie upload failed", e);
       return null;
@@ -576,6 +595,35 @@ export default function TimeIn() {
     setSubmitting(true);
     setMode(selectedMode);
 
+    // Pre-check today's attendance to avoid capturing GPS/selfie for duplicates
+    try {
+      const { data: attData } = await supabase.rpc("kiosk_get_today_attendance", { _employee_id: employeeId });
+      const att: any = attData || {};
+      if (selectedMode === "in" && att.time_in) {
+        const { playVoice } = await import("@/lib/voiceService");
+        playVoice("Attendance already recorded for today.", undefined, "voice_error_enabled");
+        toast.error("Attendance Already Recorded\nYou have already completed your Time In for today. Thank you.");
+        triggerShake();
+        setSubmitting(false);
+        return;
+      }
+      if (selectedMode === "out" && att.time_out) {
+        const { playVoice } = await import("@/lib/voiceService");
+        playVoice("Attendance already completed for today.", undefined, "voice_error_enabled");
+        toast.error("Attendance Already Completed\nYou have already completed your Time Out for today. Thank you.");
+        triggerShake();
+        setSubmitting(false);
+        return;
+      }
+      if (selectedMode === "out" && !att.time_in) {
+        toast.error("No Time In record for today. Please Time In first.");
+        triggerShake();
+        setSubmitting(false);
+        return;
+      }
+    } catch {}
+
+
     // Acquire high-accuracy GPS FIRST — reject punch if we can't get ≤ 20m.
     setGpsStatus('Waiting for a more accurate GPS signal…');
     const preciseLocation = await getPreciseLocation();
@@ -656,7 +704,20 @@ export default function TimeIn() {
 
       if (error) throw error;
       const res = data as any;
-      if (!res?.ok) throw new Error(res?.error || "Punch failed");
+      if (!res?.ok) {
+        if (res?.code === 'ALREADY_TIMED_IN' || res?.code === 'ALREADY_TIMED_OUT') {
+          const msg = res.code === 'ALREADY_TIMED_IN'
+            ? "Attendance Already Recorded\nYou have already completed your Time In for today. Thank you."
+            : "Attendance Already Completed\nYou have already completed your Time Out for today. Thank you.";
+          const { playVoice } = await import("@/lib/voiceService");
+          playVoice("Attendance already completed for today.", undefined, "voice_error_enabled");
+          toast.error(msg);
+          triggerShake();
+          setSubmitting(false);
+          return;
+        }
+        throw new Error(res?.error || "Punch failed");
+      }
 
       const timeStr = new Date().toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit", hour12: true });
       
