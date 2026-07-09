@@ -156,7 +156,7 @@ export default function Attendance() {
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [employees, setEmployees] = useState<any[]>([]);
 
-  const [selfieModal, setSelfieModal] = useState<AttendanceRecord | null>(null);
+  const [selfieModal, setSelfieModal] = useState<{ record: AttendanceRecord; type: 'in' | 'out' } | null>(null);
   const [editModal, setEditModal] = useState<AttendanceRecord | null>(null);
   const [editForm, setEditForm] = useState({
     date: '', time_in: '', time_out: '',
@@ -384,32 +384,27 @@ export default function Attendance() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-center w-28">Selfies</TableHead>
               <TableHead>Employee ID</TableHead>
               <TableHead>Employee Name</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Time In</TableHead>
               <TableHead>Time Out</TableHead>
+              <TableHead className="text-center w-28">Time In Selfie</TableHead>
+              <TableHead className="text-center w-28">Time Out Selfie</TableHead>
               <TableHead>Status</TableHead>
               {isAdminOrHR && <TableHead className="w-20">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
             ) : records.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">No records for the selected filters</TableCell></TableRow>
+              <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No records for the selected filters</TableCell></TableRow>
             ) : (
               records.map(r => {
                 const isLocked = r.locked || r.status === 'COMPLETED' || (!!r.time_in && !!r.time_out);
                 return (
                   <TableRow key={r.id}>
-                    <TableCell className="text-center">
-                      <div className="flex items-center gap-1 justify-center">
-                        <SelfieThumb src={r.photo_in_url} alt="Time In" onClick={() => setSelfieModal(r)} className="w-10 h-10" />
-                        <SelfieThumb src={r.photo_out_url} alt="Time Out" onClick={() => setSelfieModal(r)} className="w-10 h-10" />
-                      </div>
-                    </TableCell>
                     <TableCell className="font-mono text-sm">{r.employees?.employee_code || r.employee_code || "—"}</TableCell>
                     <TableCell className="font-medium">{empLabel(r)}</TableCell>
                     <TableCell>{new Date(r.date).toLocaleDateString()}</TableCell>
@@ -432,6 +427,22 @@ export default function Attendance() {
                           {r.gps_accuracy_out != null && ` · ±${Math.round(r.gps_accuracy_out)}m`}
                         </div>
                       )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <SelfieThumb
+                        src={r.photo_in_url}
+                        alt="Time In Selfie"
+                        onClick={() => setSelfieModal({ record: r, type: 'in' })}
+                        className="w-12 h-12 mx-auto"
+                      />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <SelfieThumb
+                        src={r.photo_out_url}
+                        alt="Time Out Selfie"
+                        onClick={() => setSelfieModal({ record: r, type: 'out' })}
+                        className="w-12 h-12 mx-auto"
+                      />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -463,30 +474,43 @@ export default function Attendance() {
 
       {/* Selfie Preview Dialog */}
       <Dialog open={!!selfieModal} onOpenChange={(o) => { if (!o) setSelfieModal(null); }}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>{selfieModal ? empLabel(selfieModal) : ''}</DialogTitle>
+            <DialogTitle>
+              {selfieModal ? empLabel(selfieModal.record) : ''}
+              {selfieModal && (
+                <span className="ml-2 text-sm font-normal text-primary">
+                  — {selfieModal.type === 'in' ? 'Time In Selfie' : 'Time Out Selfie'}
+                </span>
+              )}
+            </DialogTitle>
             <DialogDescription>
-              {selfieModal ? new Date(selfieModal.date).toLocaleDateString() : ''}
-              {selfieModal?.time_in && <> · In {new Date(selfieModal.time_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</>}
-              {selfieModal?.time_out && <> · Out {new Date(selfieModal.time_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</>}
+              {selfieModal ? new Date(selfieModal.record.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}
+              {selfieModal?.type === 'in' && selfieModal.record.time_in && (
+                <> · In {new Date(selfieModal.record.time_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</>
+              )}
+              {selfieModal?.type === 'out' && selfieModal.record.time_out && (
+                <> · Out {new Date(selfieModal.record.time_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</>
+              )}
             </DialogDescription>
           </DialogHeader>
           {selfieModal && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <SelfieViewer src={selfieModal.photo_in_url} label="TIME IN" />
-                <div className="text-[11px] text-muted-foreground p-2 bg-muted/50 rounded">
-                  <div className="flex items-start gap-1"><MapPin className="w-3 h-3 mt-0.5" /><span className="truncate">{selfieModal.location_label_in || "No location recorded"}</span></div>
-                  {selfieModal.gps_accuracy_in != null && <div className="mt-0.5">GPS Accuracy: ±{Math.round(selfieModal.gps_accuracy_in)}m</div>}
+            <div className="space-y-3">
+              <SelfieViewer
+                src={selfieModal.type === 'in' ? selfieModal.record.photo_in_url : selfieModal.record.photo_out_url}
+                label={selfieModal.type === 'in' ? 'TIME IN' : 'TIME OUT'}
+              />
+              <div className="text-[11px] text-muted-foreground p-2 bg-muted/50 rounded space-y-1">
+                <div className="flex items-start gap-1">
+                  <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
+                  <span>{(selfieModal.type === 'in' ? selfieModal.record.location_label_in : selfieModal.record.location_label_out) || "No location recorded"}</span>
                 </div>
-              </div>
-              <div className="space-y-1">
-                <SelfieViewer src={selfieModal.photo_out_url} label="TIME OUT" />
-                <div className="text-[11px] text-muted-foreground p-2 bg-muted/50 rounded">
-                  <div className="flex items-start gap-1"><MapPin className="w-3 h-3 mt-0.5" /><span className="truncate">{selfieModal.location_label_out || "No location recorded"}</span></div>
-                  {selfieModal.gps_accuracy_out != null && <div className="mt-0.5">GPS Accuracy: ±{Math.round(selfieModal.gps_accuracy_out)}m</div>}
-                </div>
+                {selfieModal.type === 'in' && selfieModal.record.gps_accuracy_in != null && (
+                  <div>GPS Accuracy: ±{Math.round(selfieModal.record.gps_accuracy_in)}m</div>
+                )}
+                {selfieModal.type === 'out' && selfieModal.record.gps_accuracy_out != null && (
+                  <div>GPS Accuracy: ±{Math.round(selfieModal.record.gps_accuracy_out)}m</div>
+                )}
               </div>
             </div>
           )}

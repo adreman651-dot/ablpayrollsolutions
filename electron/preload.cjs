@@ -18,4 +18,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFile: (filters) => ipcRenderer.invoke('select-file', filters),
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  readSelfie: (filePath) => ipcRenderer.invoke('read-selfie', filePath),
 });

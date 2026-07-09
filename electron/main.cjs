@@ -428,6 +428,23 @@ ipcMain.handle('get-app-path', () => {
   return app.getPath('userData');
 });
 
+ipcMain.handle('read-selfie', async (event, filePath) => {
+  try {
+    if (!filePath) return null;
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath);
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+      return `data:${mimeType};base64,${data.toString('base64')}`;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error reading selfie:', err.message);
+    return null;
+  }
+});
+
+
 // ─── Backup / Restore ────────────────────────────────────────────────────────
 
 ipcMain.handle('backup-db', async (event, destFolder) => {
