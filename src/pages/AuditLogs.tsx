@@ -3,10 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, FileSpreadsheet, Trash2 } from 'lucide-react';
+import { Search, FileSpreadsheet, Trash2, FileDown } from 'lucide-react';
 import { offlineQuery, offlineExecute } from '@/lib/offlineDb';
+import { supabase } from '@/integrations/supabase/client';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 
 export default function AuditLogs() {
   const [logs, setLogs] = useState<any[]>([]);
