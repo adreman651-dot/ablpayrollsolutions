@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,13 +6,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { MapPin, Image as ImageIcon, Pencil, X, Lock, ZoomIn, ZoomOut } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { MapPin, Image as ImageIcon, Pencil, X, Lock, ZoomIn, ZoomOut, ChevronDown, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { offlineExecute } from "@/lib/offlineDb";
 import { recalculatePayrollForDate } from "@/lib/payroll-recalc";
 import { getSelfieUrl } from "@/lib/selfieUrl";
 import { Capacitor } from "@capacitor/core";
+import { ATTENDANCE_STATUSES, getStatusMeta, type AttendanceStatus } from "@/lib/attendanceStatus";
 
 interface AttendanceRecord {
   id: string;
@@ -31,6 +36,8 @@ interface AttendanceRecord {
   gps_accuracy_in: number | null;
   gps_accuracy_out: number | null;
   status: string | null;
+  attendance_status: string | null;
+  status_reason: string | null;
   total_hours: number | null;
   employee_code: string | null;
   employee_name: string | null;
@@ -145,6 +152,8 @@ function SelfieViewer({ src, label }: { src: string | null; label: string }) {
 export default function Attendance() {
   const { hasRole, user, roles } = useAuth();
   const isAdminOrHR = hasRole('admin') || hasRole('hr');
+  const isManager = hasRole('payroll_officer'); // manager-style view-only
+  const canChangeStatus = isAdminOrHR;
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMode, setFilterMode] = useState<"day" | "month" | "range">("day");
@@ -154,10 +163,15 @@ export default function Attendance() {
   const [dateTo, setDateTo] = useState(new Date().toISOString().split("T")[0]);
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [employees, setEmployees] = useState<any[]>([]);
 
   const [selfieModal, setSelfieModal] = useState<{ record: AttendanceRecord; type: 'in' | 'out' } | null>(null);
   const [editModal, setEditModal] = useState<AttendanceRecord | null>(null);
+  const [statusModal, setStatusModal] = useState<{ record: AttendanceRecord; newStatus: AttendanceStatus } | null>(null);
+  const [statusReason, setStatusReason] = useState<string>("");
+  const [statusSaving, setStatusSaving] = useState(false);
   const [editForm, setEditForm] = useState({
     date: '', time_in: '', time_out: '',
     location_label_in: '', location_label_out: '',
@@ -167,7 +181,7 @@ export default function Attendance() {
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Manual Attendance State
+  // ── Manual Attendance State ──────────────────────────────────────────
   const [manualModalOpen, setManualModalOpen] = useState(false);
   const [manualForm, setManualForm] = useState({
     employee_id: '',
@@ -187,11 +201,11 @@ export default function Attendance() {
     let alive = true;
     const fetchCurrent = async () => {
       const { data } = await supabase.from('attendance')
-        .select('status')
+        .select('status, attendance_status')
         .eq('employee_id', manualForm.employee_id)
         .eq('date', manualForm.date)
         .maybeSingle();
-      if (alive) setManualCurrentStatus(data?.status || 'No Record');
+      if (alive) setManualCurrentStatus(data?.attendance_status || data?.status || 'No Record');
     };
     fetchCurrent();
     return () => { alive = false; };
@@ -204,18 +218,9 @@ export default function Attendance() {
   };
 
   const handleManualSubmit = async () => {
-    if (isFutureDate(manualForm.date)) {
-      toast.error("Manual Attendance Not Allowed: Future attendance records cannot be created or modified. Please select today's date or a previous date.");
-      return;
-    }
-    if (!manualForm.employee_id) {
-      toast.error("Select an employee");
-      return;
-    }
-    if (!manualForm.reason.trim()) {
-      toast.error("Reason is required");
-      return;
-    }
+    if (isFutureDate(manualForm.date)) return;
+    if (!manualForm.employee_id) { toast.error("Select an employee"); return; }
+    if (!manualForm.reason.trim()) { toast.error("Reason is required"); return; }
 
     setSaving(true);
     const { data: runs, error } = await supabase.from('payroll_runs')
@@ -224,12 +229,8 @@ export default function Attendance() {
       .gte('period_end', manualForm.date)
       .eq('status', 'completed');
     setSaving(false);
-    
-    if (error) {
-      toast.error("Error checking payroll status");
-      return;
-    }
 
+    if (error) { toast.error("Error checking payroll status"); return; }
     if (runs && runs.length > 0) {
       setPayrollProcessedWarningOpen(true);
     } else {
@@ -243,30 +244,34 @@ export default function Attendance() {
       const employee = employees.find(e => e.id === manualForm.employee_id);
       if (!employee) throw new Error("Employee not found");
 
-      let updates: any = {
-        date: manualForm.date,
+      const isDayOff = ['Day Off', 'Rest Day', 'Absent'].includes(manualForm.status);
+      const updates: any = {
         employee_id: manualForm.employee_id,
-        status: manualForm.status,
+        date: manualForm.date,
+        attendance_status: manualForm.status,
+        status_reason: manualForm.reason.trim(),
+        status_modified_by: user?.id ?? null,
+        status_modified_by_email: user?.email ?? null,
+        status_modified_by_role: roles?.[0] || 'admin',
+        status_modified_at: new Date().toISOString(),
         locked: true,
       };
 
-      if (manualForm.status.toUpperCase() === 'DAY OFF') {
+      if (isDayOff) {
         updates.time_in = null;
         updates.time_out = null;
         updates.total_hours = 0;
         updates.late_minutes = 0;
         updates.undertime_minutes = 0;
+        updates.status = manualForm.status.toUpperCase();
       }
 
       const { data: existing } = await supabase.from('attendance')
-        .select('*')
-        .eq('employee_id', manualForm.employee_id)
-        .eq('date', manualForm.date)
-        .maybeSingle();
+        .select('*').eq('employee_id', manualForm.employee_id).eq('date', manualForm.date).maybeSingle();
 
       let recordId = existing?.id;
-      let actionType = 'OVERRIDE';
-      
+      let actionType = 'MANUAL_OVERRIDE';
+
       if (existing) {
         const { error } = await supabase.from('attendance').update(updates).eq('id', existing.id);
         if (error) throw error;
@@ -274,33 +279,32 @@ export default function Attendance() {
         const { data: ins, error } = await supabase.from('attendance').insert([updates]).select('id').single();
         if (error) throw error;
         recordId = ins.id;
-        actionType = 'CREATE';
+        actionType = 'MANUAL_CREATE';
       }
 
       const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
-      const role = roles?.[0] || (isAdminOrHR ? 'admin' : 'user');
+      const role = roles?.[0] || 'admin';
       const empName = `${employee.first_name} ${employee.last_name}`;
-      
+
+      // Cloud audit via attendance_status_logs
       try {
-        await supabase.from('attendance_overrides').insert({
+        await supabase.from('attendance_status_logs').insert({
           attendance_id: recordId,
           employee_id: manualForm.employee_id,
           employee_name: empName,
-          original_date: manualForm.date,
-          new_date: manualForm.date,
-          original_time_in: existing?.time_in,
-          new_time_in: updates.time_in,
-          original_time_out: existing?.time_out,
-          new_time_out: updates.time_out,
+          attendance_date: manualForm.date,
+          old_status: manualCurrentStatus,
+          new_status: manualForm.status,
           reason: manualForm.reason.trim(),
-          modified_by: user?.id,
-          modified_by_email: user?.email,
+          modified_by: user?.id ?? null,
+          modified_by_email: user?.email ?? null,
           modified_by_role: role,
-          device: navigator.userAgent.substring(0, 200),
           platform,
+          device: navigator.userAgent.substring(0, 200),
         });
-      } catch (e) { console.warn("Cloud audit failed", e); }
+      } catch (e) { console.warn('Cloud audit failed', e); }
 
+      // Local audit log
       try {
         await offlineExecute(
           `INSERT INTO audit_logs (user_id, user_email, action, table_name, record_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -311,23 +315,24 @@ export default function Attendance() {
             new Date().toISOString(),
           ]
         );
-      } catch (e) { console.warn("Local audit failed", e); }
+      } catch (e) { console.warn('Local audit failed', e); }
 
       try { await recalculatePayrollForDate(manualForm.date); }
-      catch (e) { console.warn("Recalc failed", e); }
+      catch (e) { console.warn('Payroll recalc failed', e); }
 
-      toast.success("Manual attendance saved");
+      toast.success('Manual attendance saved successfully.');
       setManualModalOpen(false);
       setPayrollProcessedWarningOpen(false);
       setManualSaveConfirmOpen(false);
       setManualForm({ employee_id: '', date: new Date().toISOString().split("T")[0], status: 'Day Off', reason: '' });
       fetchAttendance();
     } catch (e: any) {
-      toast.error("Failed: " + e.message);
+      toast.error('Failed: ' + e.message);
     } finally {
       setSaving(false);
     }
   };
+  // ── End Manual Attendance ────────────────────────────────────────────
 
   const fetchAttendance = async () => {
     setLoading(true);
@@ -488,16 +493,102 @@ export default function Attendance() {
     supabase.from("employees").select("id, first_name, last_name, employee_code, department").order("last_name").then(({ data }) => setEmployees(data || []));
   }, []);
 
-  const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
-  const totals = {
-    days: new Set(records.map(r => `${r.employee_id}_${r.date}`)).size,
-    hours: records.reduce((s, r: any) => s + (r.total_hours || 0), 0),
-    late: records.filter((r: any) => (r.late_minutes || 0) > 0).length,
-    undertime: records.filter((r: any) => (r.undertime_minutes || 0) > 0).length,
-  };
-
   const empLabel = (r: AttendanceRecord) =>
     r.employees ? `${r.employees.first_name} ${r.employees.last_name}` : (r.employee_name || "—");
+
+  const filteredRecords = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return records.filter((r) => {
+      if (statusFilter !== "all") {
+        const eff = r.attendance_status || (r.status === "COMPLETED" || r.status === "On Time" || r.status === "Late" || r.status === "present" || r.status === "late" ? "Present" : null);
+        if (eff !== statusFilter) return false;
+      }
+      if (q) {
+        const hay = [
+          empLabel(r),
+          r.employees?.employee_code,
+          r.employee_code,
+          r.attendance_status,
+          r.status,
+          r.status_reason,
+          r.date,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [records, statusFilter, searchQuery]);
+
+  const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
+  const totals = {
+    days: new Set(filteredRecords.map(r => `${r.employee_id}_${r.date}`)).size,
+    hours: filteredRecords.reduce((s, r: any) => s + (r.total_hours || 0), 0),
+    late: filteredRecords.filter((r: any) => (r.late_minutes || 0) > 0).length,
+    undertime: filteredRecords.filter((r: any) => (r.undertime_minutes || 0) > 0).length,
+  };
+
+  const performStatusChange = async () => {
+    if (!statusModal) return;
+    if (!canChangeStatus) { toast.error("You don't have permission to change attendance status."); return; }
+    setStatusSaving(true);
+    try {
+      const nowISO = new Date().toISOString();
+      const role = roles?.[0] || 'admin';
+      const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
+      const oldStatus = statusModal.record.attendance_status || statusModal.record.status || null;
+
+      const { error } = await supabase.from('attendance').update({
+        attendance_status: statusModal.newStatus,
+        status_reason: statusReason.trim() || null,
+        status_modified_by: user?.id ?? null,
+        status_modified_by_email: user?.email ?? null,
+        status_modified_by_role: role,
+        status_modified_at: nowISO,
+      }).eq('id', statusModal.record.id);
+      if (error) throw error;
+
+      try {
+        await supabase.from('attendance_status_logs').insert({
+          attendance_id: statusModal.record.id,
+          employee_id: statusModal.record.employee_id,
+          employee_name: empLabel(statusModal.record),
+          attendance_date: statusModal.record.date,
+          old_status: oldStatus,
+          new_status: statusModal.newStatus,
+          reason: statusReason.trim() || null,
+          modified_by: user?.id ?? null,
+          modified_by_email: user?.email ?? null,
+          modified_by_role: role,
+          platform,
+          device: navigator.userAgent.substring(0, 200),
+        });
+      } catch (e) { console.warn('status log cloud write failed', e); }
+
+      try {
+        await offlineExecute(
+          `INSERT INTO audit_logs (user_id, user_email, action, table_name, record_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            user?.id ?? null, user?.email ?? null, 'ATTENDANCE_STATUS_CHANGE', 'attendance', statusModal.record.id,
+            JSON.stringify({ old: oldStatus, new: statusModal.newStatus, reason: statusReason, date: statusModal.record.date }),
+            nowISO,
+          ]
+        );
+      } catch (e) { console.warn('local audit failed', e); }
+
+      try { await recalculatePayrollForDate(statusModal.record.date); }
+      catch (e) { console.warn('payroll recalc failed', e); }
+
+      toast.success(`Status set to ${statusModal.newStatus}`);
+      setStatusModal(null);
+      setStatusReason("");
+      await fetchAttendance();
+    } catch (err: any) {
+      toast.error('Failed to update status: ' + err.message);
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
 
   return (
     <div>
@@ -540,8 +631,16 @@ export default function Attendance() {
           <option value="all">All Departments</option>
           {departments.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-10 px-3 rounded-md border border-border bg-background text-sm min-w-[180px]">
+          <option value="all">All Statuses</option>
+          {ATTENDANCE_STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+        </select>
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search name, code, status, reason…" className="pl-8 h-10" />
+        </div>
         {isAdminOrHR && (
-          <Button variant="default" onClick={() => setManualModalOpen(true)} className="ml-auto">
+          <Button variant="default" onClick={() => setManualModalOpen(true)} className="shrink-0">
             Manual
           </Button>
         )}
@@ -559,16 +658,17 @@ export default function Attendance() {
               <TableHead className="text-center w-28">Time In Selfie</TableHead>
               <TableHead className="text-center w-28">Time Out Selfie</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="min-w-[200px]">Attendance Status</TableHead>
               {isAdminOrHR && <TableHead className="w-20">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
-            ) : records.length === 0 ? (
-              <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No records for the selected filters</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
+            ) : filteredRecords.length === 0 ? (
+              <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground">No records for the selected filters</TableCell></TableRow>
             ) : (
-              records.map(r => {
+              filteredRecords.map(r => {
                 const isLocked = r.locked || r.status === 'COMPLETED' || (!!r.time_in && !!r.time_out);
                 return (
                   <TableRow key={r.id}>
@@ -623,6 +723,49 @@ export default function Attendance() {
                         </Badge>
                         {isLocked && <Lock className="w-3 h-3 text-muted-foreground" aria-label="Locked" />}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const current = (r.attendance_status as AttendanceStatus | null) || null;
+                        const meta = getStatusMeta(current || undefined);
+                        const label = current ? `${meta?.icon ?? ""} ${current}` : "Set Status";
+                        if (!canChangeStatus) {
+                          return current
+                            ? <Badge variant="outline" className={meta?.badgeClass}>{label}</Badge>
+                            : <span className="text-xs text-muted-foreground">—</span>;
+                        }
+                        return (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`h-8 justify-between gap-2 min-w-[180px] ${meta?.badgeClass ?? ""}`}
+                              >
+                                <span className="truncate">{label}</span>
+                                <ChevronDown className="w-3 h-3 opacity-70 shrink-0" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52 max-h-[70vh] overflow-y-auto">
+                              <DropdownMenuLabel>Attendance Status</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {ATTENDANCE_STATUSES.map((s) => (
+                                <DropdownMenuItem
+                                  key={s.value}
+                                  onSelect={() => { setStatusReason(""); setStatusModal({ record: r, newStatus: s.value }); }}
+                                >
+                                  <span className="mr-2">{s.icon}</span>{s.label}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        );
+                      })()}
+                      {r.status_reason && (
+                        <div className="text-[10px] text-muted-foreground mt-1 truncate max-w-[220px]" title={r.status_reason}>
+                          Reason: {r.status_reason}
+                        </div>
+                      )}
                     </TableCell>
                     {isAdminOrHR && (
                       <TableCell>
@@ -775,23 +918,65 @@ export default function Attendance() {
         </DialogContent>
       </Dialog>
 
-      {/* Manual Attendance Entry Dialog */}
+      {/* Attendance Status Change Dialog */}
+      <Dialog open={!!statusModal} onOpenChange={(o) => { if (!o) { setStatusModal(null); setStatusReason(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Attendance Status</DialogTitle>
+            <DialogDescription>Confirm the attendance status change for this record.</DialogDescription>
+          </DialogHeader>
+          {statusModal && (
+            <div className="space-y-3 py-2 text-sm">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="text-muted-foreground">Employee:</div>
+                <div className="col-span-2 font-medium">{empLabel(statusModal.record)}</div>
+                <div className="text-muted-foreground">Attendance Date:</div>
+                <div className="col-span-2">{new Date(statusModal.record.date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                <div className="text-muted-foreground">Status:</div>
+                <div className="col-span-2">
+                  <Badge variant="outline" className={getStatusMeta(statusModal.newStatus)?.badgeClass}>
+                    {getStatusMeta(statusModal.newStatus)?.icon} {statusModal.newStatus}
+                  </Badge>
+                </div>
+              </div>
+              <div className="space-y-1 pt-2">
+                <Label>Reason <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Textarea
+                  value={statusReason}
+                  onChange={(e) => setStatusReason(e.target.value)}
+                  placeholder="Add a note explaining this status change…"
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setStatusModal(null); setStatusReason(""); }} disabled={statusSaving}>Cancel</Button>
+            <Button onClick={performStatusChange} disabled={statusSaving}>{statusSaving ? 'Saving…' : 'Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Manual Attendance Entry Dialog ─────────────────────────────── */}
       {isAdminOrHR && (
-        <Dialog open={manualModalOpen} onOpenChange={o => { if(!o) { setManualModalOpen(false); }}}>
+        <Dialog open={manualModalOpen} onOpenChange={o => { if (!o) setManualModalOpen(false); }}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Manual Attendance Entry</DialogTitle>
+              <DialogDescription>Create or update an attendance record for a specific employee and date.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1">
                 <Label>Employee</Label>
-                <select 
+                <select
                   className="w-full h-10 px-3 rounded-md border border-border bg-background text-sm"
                   value={manualForm.employee_id}
                   onChange={e => setManualForm(f => ({ ...f, employee_id: e.target.value }))}
                 >
                   <option value="" disabled>Select Employee</option>
-                  {employees.map(e => <option key={e.id} value={e.id}>{e.employee_code} — {e.last_name}, {e.first_name}</option>)}
+                  {employees.map(e => (
+                    <option key={e.id} value={e.id}>{e.employee_code} — {e.last_name}, {e.first_name}</option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-1">
@@ -803,8 +988,8 @@ export default function Attendance() {
                 <div className="font-medium text-sm border bg-muted/30 px-3 py-2 rounded-md">{manualCurrentStatus}</div>
               </div>
               <div className="space-y-1">
-                <Label>Attendance Status Dropdown</Label>
-                <select 
+                <Label>New Attendance Status</Label>
+                <select
                   className="w-full h-10 px-3 rounded-md border border-border bg-background text-sm"
                   value={manualForm.status}
                   onChange={e => setManualForm(f => ({ ...f, status: e.target.value }))}
@@ -820,98 +1005,91 @@ export default function Attendance() {
                 </select>
               </div>
               <div className="space-y-1">
-                <Label>Reason</Label>
-                <Input 
-                  value={manualForm.reason} 
-                  onChange={e => setManualForm(f => ({ ...f, reason: e.target.value }))} 
-                  placeholder="Reason for manual entry" 
+                <Label>Reason *</Label>
+                <Input
+                  value={manualForm.reason}
+                  onChange={e => setManualForm(f => ({ ...f, reason: e.target.value }))}
+                  placeholder="Reason for manual entry"
                 />
               </div>
-
               {isFutureDate(manualForm.date) && (
                 <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md border border-destructive/20">
                   <p className="font-semibold mb-1">Manual Attendance Not Allowed</p>
-                  <p>Future attendance records cannot be created or modified. Please select today's date or a previous date.</p>
+                  <p>Future attendance records cannot be created or modified.</p>
+                  <p className="mt-1">Please select today's date or a previous date.</p>
                 </div>
               )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setManualModalOpen(false)}>Cancel</Button>
               <Button onClick={handleManualSubmit} disabled={saving || isFutureDate(manualForm.date)}>
-                Save
+                {saving ? 'Checking…' : 'Save'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
 
-      {/* Payroll Already Processed Warning */}
+      {/* ── Payroll Already Processed Warning ──────────────────────────── */}
       <Dialog open={payrollProcessedWarningOpen} onOpenChange={setPayrollProcessedWarningOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Payroll Already Processed</DialogTitle>
-            <DialogDescription className="pt-2 text-foreground">
-              The selected attendance belongs to a payroll period that has already been processed.<br/><br/>
-              Changing this attendance may affect payroll computations. Would you like to continue?
+            <DialogDescription className="pt-2 space-y-2">
+              <span>The selected attendance belongs to a payroll period that has already been processed.</span><br />
+              <span>Changing this attendance may affect payroll computations.</span><br />
+              <strong>Would you like to continue?</strong>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPayrollProcessedWarningOpen(false)}>Cancel</Button>
-            <Button onClick={() => {
+            <Button variant="destructive" onClick={() => {
               setPayrollProcessedWarningOpen(false);
               setManualSaveConfirmOpen(true);
             }}>
-              Override & Reprocess Payroll
+              Override &amp; Reprocess Payroll
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Manual Save Confirmation */}
+      {/* ── Manual Save Confirmation ────────────────────────────────────── */}
       <Dialog open={manualSaveConfirmOpen} onOpenChange={setManualSaveConfirmOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Payroll Reprocessing Required</DialogTitle>
-            <div className="pt-3 space-y-2 text-sm">
-              <div className="grid grid-cols-3">
-                <span className="text-muted-foreground">Employee:</span>
-                <span className="col-span-2 font-medium">
-                  {employees.find(e => e.id === manualForm.employee_id)?.first_name} {employees.find(e => e.id === manualForm.employee_id)?.last_name}
-                </span>
-              </div>
-              <div className="grid grid-cols-3">
-                <span className="text-muted-foreground">Attendance Date:</span>
-                <span className="col-span-2 font-medium">{manualForm.date}</span>
-              </div>
-              <div className="grid grid-cols-3">
-                <span className="text-muted-foreground">Old Status:</span>
-                <span className="col-span-2 font-medium">{manualCurrentStatus}</span>
-              </div>
-              <div className="grid grid-cols-3">
-                <span className="text-muted-foreground">New Status:</span>
-                <span className="col-span-2 font-medium">{manualForm.status}</span>
-              </div>
-              <div className="grid grid-cols-3">
-                <span className="text-muted-foreground">Reason:</span>
-                <span className="col-span-2 font-medium">{manualForm.reason}</span>
-              </div>
-              
-              <div className="pt-3">
-                <p className="font-semibold mb-2">This action will automatically:</p>
-                <ul className="space-y-1 text-muted-foreground">
-                  <li>✓ Update Attendance</li>
-                  <li>✓ Update Payroll</li>
-                  <li>✓ Update Payslip</li>
-                  <li>✓ Update Attendance Report</li>
-                  <li>✓ Update Payroll Report</li>
-                </ul>
-                <p className="mt-4">Continue?</p>
-              </div>
-            </div>
           </DialogHeader>
+          <div className="py-2 space-y-2 text-sm">
+            <div className="grid grid-cols-3 gap-y-2">
+              <span className="text-muted-foreground">Employee:</span>
+              <span className="col-span-2 font-medium">
+                {employees.find(e => e.id === manualForm.employee_id)?.first_name}{' '}
+                {employees.find(e => e.id === manualForm.employee_id)?.last_name}
+              </span>
+              <span className="text-muted-foreground">Attendance Date:</span>
+              <span className="col-span-2 font-medium">{manualForm.date}</span>
+              <span className="text-muted-foreground">Old Status:</span>
+              <span className="col-span-2 font-medium">{manualCurrentStatus}</span>
+              <span className="text-muted-foreground">New Status:</span>
+              <span className="col-span-2 font-medium">{manualForm.status}</span>
+              <span className="text-muted-foreground">Reason:</span>
+              <span className="col-span-2 font-medium">{manualForm.reason}</span>
+            </div>
+            <div className="pt-3">
+              <p className="font-semibold mb-2">This action will automatically:</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li>✓ Update Attendance</li>
+                <li>✓ Update Payroll</li>
+                <li>✓ Update Payslip</li>
+                <li>✓ Update Attendance Report</li>
+                <li>✓ Update Payroll Report</li>
+              </ul>
+              <p className="mt-4 font-medium">Continue?</p>
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setManualSaveConfirmOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={executeManualSave} disabled={saving}>{saving ? 'Saving...' : 'Proceed'}</Button>
+            <Button onClick={executeManualSave} disabled={saving}>{saving ? 'Saving…' : 'Proceed'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
