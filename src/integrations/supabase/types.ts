@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       attendance: {
         Row: {
+          attendance_status: string | null
           created_at: string
           date: string
           device_timestamp: string | null
@@ -45,6 +46,11 @@ export type Database = {
           photo_out_url: string | null
           selfie_url: string | null
           status: string | null
+          status_modified_at: string | null
+          status_modified_by: string | null
+          status_modified_by_email: string | null
+          status_modified_by_role: string | null
+          status_reason: string | null
           time_in: string | null
           time_out: string | null
           total_hours: number | null
@@ -52,6 +58,7 @@ export type Database = {
           undertime_minutes: number | null
         }
         Insert: {
+          attendance_status?: string | null
           created_at?: string
           date?: string
           device_timestamp?: string | null
@@ -81,6 +88,11 @@ export type Database = {
           photo_out_url?: string | null
           selfie_url?: string | null
           status?: string | null
+          status_modified_at?: string | null
+          status_modified_by?: string | null
+          status_modified_by_email?: string | null
+          status_modified_by_role?: string | null
+          status_reason?: string | null
           time_in?: string | null
           time_out?: string | null
           total_hours?: number | null
@@ -88,6 +100,7 @@ export type Database = {
           undertime_minutes?: number | null
         }
         Update: {
+          attendance_status?: string | null
           created_at?: string
           date?: string
           device_timestamp?: string | null
@@ -117,6 +130,11 @@ export type Database = {
           photo_out_url?: string | null
           selfie_url?: string | null
           status?: string | null
+          status_modified_at?: string | null
+          status_modified_by?: string | null
+          status_modified_by_email?: string | null
+          status_modified_by_role?: string | null
+          status_reason?: string | null
           time_in?: string | null
           time_out?: string | null
           total_hours?: number | null
@@ -230,6 +248,57 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      attendance_status_logs: {
+        Row: {
+          attendance_date: string | null
+          attendance_id: string | null
+          created_at: string
+          device: string | null
+          employee_id: string | null
+          employee_name: string | null
+          id: string
+          modified_by: string | null
+          modified_by_email: string | null
+          modified_by_role: string | null
+          new_status: string | null
+          old_status: string | null
+          platform: string | null
+          reason: string | null
+        }
+        Insert: {
+          attendance_date?: string | null
+          attendance_id?: string | null
+          created_at?: string
+          device?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string
+          modified_by?: string | null
+          modified_by_email?: string | null
+          modified_by_role?: string | null
+          new_status?: string | null
+          old_status?: string | null
+          platform?: string | null
+          reason?: string | null
+        }
+        Update: {
+          attendance_date?: string | null
+          attendance_id?: string | null
+          created_at?: string
+          device?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string
+          modified_by?: string | null
+          modified_by_email?: string | null
+          modified_by_role?: string | null
+          new_status?: string | null
+          old_status?: string | null
+          platform?: string | null
+          reason?: string | null
+        }
+        Relationships: []
       }
       employees: {
         Row: {
