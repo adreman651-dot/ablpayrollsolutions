@@ -759,6 +759,45 @@ export default function Attendance() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Attendance Status Change Dialog */}
+      <Dialog open={!!statusModal} onOpenChange={(o) => { if (!o) { setStatusModal(null); setStatusReason(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Attendance Status</DialogTitle>
+            <DialogDescription>Confirm the attendance status change for this record.</DialogDescription>
+          </DialogHeader>
+          {statusModal && (
+            <div className="space-y-3 py-2 text-sm">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="text-muted-foreground">Employee:</div>
+                <div className="col-span-2 font-medium">{empLabel(statusModal.record)}</div>
+                <div className="text-muted-foreground">Attendance Date:</div>
+                <div className="col-span-2">{new Date(statusModal.record.date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                <div className="text-muted-foreground">Status:</div>
+                <div className="col-span-2">
+                  <Badge variant="outline" className={getStatusMeta(statusModal.newStatus)?.badgeClass}>
+                    {getStatusMeta(statusModal.newStatus)?.icon} {statusModal.newStatus}
+                  </Badge>
+                </div>
+              </div>
+              <div className="space-y-1 pt-2">
+                <Label>Reason <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Textarea
+                  value={statusReason}
+                  onChange={(e) => setStatusReason(e.target.value)}
+                  placeholder="Add a note explaining this status change…"
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setStatusModal(null); setStatusReason(""); }} disabled={statusSaving}>Cancel</Button>
+            <Button onClick={performStatusChange} disabled={statusSaving}>{statusSaving ? 'Saving…' : 'Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
