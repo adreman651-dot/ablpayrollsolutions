@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { computeDailyRate, computeWithholdingTax, computeSSS, computePhilHealth, computePagIBIG } from "./payroll-utils";
+import { getStatusMeta } from "./attendanceStatus";
 
 export async function recalculatePayrollForDate(dateString: string) {
   // Find all payroll runs that cover this date
