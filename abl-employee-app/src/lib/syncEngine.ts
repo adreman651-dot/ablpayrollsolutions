@@ -33,7 +33,7 @@ const LOCAL_ONLY_UPLOAD_FIELDS = ['sync_status', 'synced_at', 'last_synced', 'of
 
 const ALLOWED_COLUMNS: Record<string, Set<string>> = {
   employees: new Set(['id','employee_code','first_name','last_name','middle_name','email','phone','address','birthdate','hire_date','job_title','department','basic_salary','sss_number','philhealth_number','pagibig_number','tin_number','employment_status','profile_photo_url','updated_at']),
-  attendance: new Set(['id','employee_id','date','time_in','time_out','photo_in_url','photo_out_url','selfie_url','latitude','longitude','latitude_in','longitude_in','latitude_out','longitude_out','location_label_in','location_label_out','late_minutes','status','notes','total_hours','overtime_minutes','undertime_minutes','employee_code','employee_name','device_type','gps_accuracy']),
+  attendance: new Set(['id','employee_id','date','time_in','time_out','photo_in_url','photo_out_url','selfie_url','latitude','longitude','latitude_in','longitude_in','latitude_out','longitude_out','location_label_in','location_label_out','late_minutes','status','notes','total_hours','overtime_minutes','undertime_minutes','employee_code','employee_name','device_type','gps_accuracy','attendance_status','status_reason','status_modified_by','status_modified_by_email','status_modified_by_role','status_modified_at']),
   leaves: new Set(['id','employee_id','leave_type_id','start_date','end_date','duration','reason','status','approved_by','updated_at']),
   loans: new Set(['id','employee_id','loan_type','principal_amount','monthly_amortization','remaining_balance','total_paid','status','start_date','approved_by','updated_at']),
   loan_payments: new Set(['id','loan_id','amount','payment_date','payroll_run_id']),
