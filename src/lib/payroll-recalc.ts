@@ -31,14 +31,20 @@ export async function recalculatePayrollForDate(dateString: string) {
       for (const emp of employees) {
         // Count days present (time_in and time_out are not null)
         const { data: attendance } = await supabase.from("attendance")
-          .select("late_minutes, status, date, time_in, time_out")
+          .select("late_minutes, status, attendance_status, date, time_in, time_out")
           .eq("employee_id", emp.id)
           .gte("date", run.period_start)
           .lte("date", run.period_end);
 
-        const daysPresent = (attendance || []).filter(a =>
-          a.time_in && a.time_out
-        ).length;
+        // Attendance Status drives payroll counting when set.
+        // - countsAsWorkDay: paid day (Holiday/SL/VL/OB/Training/Present)
+        // - Absent / Day Off / Rest Day => not counted (Rest Day paid handling
+        //   is deferred to Payroll Settings; default excludes)
+        const daysPresent = (attendance || []).filter((a: any) => {
+          const meta = getStatusMeta(a.attendance_status);
+          if (meta) return meta.countsAsWorkDay;
+          return a.time_in && a.time_out;
+        }).length;
 
         const { data: leaveData } = await supabase.from("leaves")
           .select("duration")
