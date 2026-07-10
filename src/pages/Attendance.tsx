@@ -340,16 +340,102 @@ export default function Attendance() {
     supabase.from("employees").select("id, first_name, last_name, employee_code, department").order("last_name").then(({ data }) => setEmployees(data || []));
   }, []);
 
-  const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
-  const totals = {
-    days: new Set(records.map(r => `${r.employee_id}_${r.date}`)).size,
-    hours: records.reduce((s, r: any) => s + (r.total_hours || 0), 0),
-    late: records.filter((r: any) => (r.late_minutes || 0) > 0).length,
-    undertime: records.filter((r: any) => (r.undertime_minutes || 0) > 0).length,
-  };
-
   const empLabel = (r: AttendanceRecord) =>
     r.employees ? `${r.employees.first_name} ${r.employees.last_name}` : (r.employee_name || "—");
+
+  const filteredRecords = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return records.filter((r) => {
+      if (statusFilter !== "all") {
+        const eff = r.attendance_status || (r.status === "COMPLETED" || r.status === "On Time" || r.status === "Late" || r.status === "present" || r.status === "late" ? "Present" : null);
+        if (eff !== statusFilter) return false;
+      }
+      if (q) {
+        const hay = [
+          empLabel(r),
+          r.employees?.employee_code,
+          r.employee_code,
+          r.attendance_status,
+          r.status,
+          r.status_reason,
+          r.date,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [records, statusFilter, searchQuery]);
+
+  const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
+  const totals = {
+    days: new Set(filteredRecords.map(r => `${r.employee_id}_${r.date}`)).size,
+    hours: filteredRecords.reduce((s, r: any) => s + (r.total_hours || 0), 0),
+    late: filteredRecords.filter((r: any) => (r.late_minutes || 0) > 0).length,
+    undertime: filteredRecords.filter((r: any) => (r.undertime_minutes || 0) > 0).length,
+  };
+
+  const performStatusChange = async () => {
+    if (!statusModal) return;
+    if (!canChangeStatus) { toast.error("You don't have permission to change attendance status."); return; }
+    setStatusSaving(true);
+    try {
+      const nowISO = new Date().toISOString();
+      const role = roles?.[0] || 'admin';
+      const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
+      const oldStatus = statusModal.record.attendance_status || statusModal.record.status || null;
+
+      const { error } = await supabase.from('attendance').update({
+        attendance_status: statusModal.newStatus,
+        status_reason: statusReason.trim() || null,
+        status_modified_by: user?.id ?? null,
+        status_modified_by_email: user?.email ?? null,
+        status_modified_by_role: role,
+        status_modified_at: nowISO,
+      }).eq('id', statusModal.record.id);
+      if (error) throw error;
+
+      try {
+        await supabase.from('attendance_status_logs').insert({
+          attendance_id: statusModal.record.id,
+          employee_id: statusModal.record.employee_id,
+          employee_name: empLabel(statusModal.record),
+          attendance_date: statusModal.record.date,
+          old_status: oldStatus,
+          new_status: statusModal.newStatus,
+          reason: statusReason.trim() || null,
+          modified_by: user?.id ?? null,
+          modified_by_email: user?.email ?? null,
+          modified_by_role: role,
+          platform,
+          device: navigator.userAgent.substring(0, 200),
+        });
+      } catch (e) { console.warn('status log cloud write failed', e); }
+
+      try {
+        await offlineExecute(
+          `INSERT INTO audit_logs (user_id, user_email, action, table_name, record_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            user?.id ?? null, user?.email ?? null, 'ATTENDANCE_STATUS_CHANGE', 'attendance', statusModal.record.id,
+            JSON.stringify({ old: oldStatus, new: statusModal.newStatus, reason: statusReason, date: statusModal.record.date }),
+            nowISO,
+          ]
+        );
+      } catch (e) { console.warn('local audit failed', e); }
+
+      try { await recalculatePayrollForDate(statusModal.record.date); }
+      catch (e) { console.warn('payroll recalc failed', e); }
+
+      toast.success(`Status set to ${statusModal.newStatus}`);
+      setStatusModal(null);
+      setStatusReason("");
+      await fetchAttendance();
+    } catch (err: any) {
+      toast.error('Failed to update status: ' + err.message);
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
 
   return (
     <div>
