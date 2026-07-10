@@ -167,6 +167,168 @@ export default function Attendance() {
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // Manual Attendance State
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    employee_id: '',
+    date: new Date().toISOString().split("T")[0],
+    status: 'Day Off',
+    reason: '',
+  });
+  const [manualCurrentStatus, setManualCurrentStatus] = useState<string>('—');
+  const [payrollProcessedWarningOpen, setPayrollProcessedWarningOpen] = useState(false);
+  const [manualSaveConfirmOpen, setManualSaveConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!manualForm.employee_id || !manualForm.date) {
+      setManualCurrentStatus('—');
+      return;
+    }
+    let alive = true;
+    const fetchCurrent = async () => {
+      const { data } = await supabase.from('attendance')
+        .select('status')
+        .eq('employee_id', manualForm.employee_id)
+        .eq('date', manualForm.date)
+        .maybeSingle();
+      if (alive) setManualCurrentStatus(data?.status || 'No Record');
+    };
+    fetchCurrent();
+    return () => { alive = false; };
+  }, [manualForm.employee_id, manualForm.date]);
+
+  const isFutureDate = (d: string) => {
+    const today = new Date();
+    const todayStr = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString().split("T")[0];
+    return d > todayStr;
+  };
+
+  const handleManualSubmit = async () => {
+    if (isFutureDate(manualForm.date)) {
+      toast.error("Manual Attendance Not Allowed: Future attendance records cannot be created or modified. Please select today's date or a previous date.");
+      return;
+    }
+    if (!manualForm.employee_id) {
+      toast.error("Select an employee");
+      return;
+    }
+    if (!manualForm.reason.trim()) {
+      toast.error("Reason is required");
+      return;
+    }
+
+    setSaving(true);
+    const { data: runs, error } = await supabase.from('payroll_runs')
+      .select('id, status')
+      .lte('period_start', manualForm.date)
+      .gte('period_end', manualForm.date)
+      .eq('status', 'completed');
+    setSaving(false);
+    
+    if (error) {
+      toast.error("Error checking payroll status");
+      return;
+    }
+
+    if (runs && runs.length > 0) {
+      setPayrollProcessedWarningOpen(true);
+    } else {
+      setManualSaveConfirmOpen(true);
+    }
+  };
+
+  const executeManualSave = async () => {
+    setSaving(true);
+    try {
+      const employee = employees.find(e => e.id === manualForm.employee_id);
+      if (!employee) throw new Error("Employee not found");
+
+      let updates: any = {
+        date: manualForm.date,
+        employee_id: manualForm.employee_id,
+        status: manualForm.status,
+        locked: true,
+      };
+
+      if (manualForm.status.toUpperCase() === 'DAY OFF') {
+        updates.time_in = null;
+        updates.time_out = null;
+        updates.total_hours = 0;
+        updates.late_minutes = 0;
+        updates.undertime_minutes = 0;
+      }
+
+      const { data: existing } = await supabase.from('attendance')
+        .select('*')
+        .eq('employee_id', manualForm.employee_id)
+        .eq('date', manualForm.date)
+        .maybeSingle();
+
+      let recordId = existing?.id;
+      let actionType = 'OVERRIDE';
+      
+      if (existing) {
+        const { error } = await supabase.from('attendance').update(updates).eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { data: ins, error } = await supabase.from('attendance').insert([updates]).select('id').single();
+        if (error) throw error;
+        recordId = ins.id;
+        actionType = 'CREATE';
+      }
+
+      const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
+      const role = roles?.[0] || (isAdminOrHR ? 'admin' : 'user');
+      const empName = `${employee.first_name} ${employee.last_name}`;
+      
+      try {
+        await supabase.from('attendance_overrides').insert({
+          attendance_id: recordId,
+          employee_id: manualForm.employee_id,
+          employee_name: empName,
+          original_date: manualForm.date,
+          new_date: manualForm.date,
+          original_time_in: existing?.time_in,
+          new_time_in: updates.time_in,
+          original_time_out: existing?.time_out,
+          new_time_out: updates.time_out,
+          reason: manualForm.reason.trim(),
+          modified_by: user?.id,
+          modified_by_email: user?.email,
+          modified_by_role: role,
+          device: navigator.userAgent.substring(0, 200),
+          platform,
+        });
+      } catch (e) { console.warn("Cloud audit failed", e); }
+
+      try {
+        await offlineExecute(
+          `INSERT INTO audit_logs (user_id, user_email, action, table_name, record_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            user?.id ?? null, user?.email ?? null,
+            actionType, 'attendance', recordId,
+            JSON.stringify({ reason: manualForm.reason, old: existing, new: updates }),
+            new Date().toISOString(),
+          ]
+        );
+      } catch (e) { console.warn("Local audit failed", e); }
+
+      try { await recalculatePayrollForDate(manualForm.date); }
+      catch (e) { console.warn("Recalc failed", e); }
+
+      toast.success("Manual attendance saved");
+      setManualModalOpen(false);
+      setPayrollProcessedWarningOpen(false);
+      setManualSaveConfirmOpen(false);
+      setManualForm({ employee_id: '', date: new Date().toISOString().split("T")[0], status: 'Day Off', reason: '' });
+      fetchAttendance();
+    } catch (e: any) {
+      toast.error("Failed: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const fetchAttendance = async () => {
     setLoading(true);
     let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code, department)").order("date", { ascending: false }).order("time_in", { ascending: false });
@@ -378,6 +540,11 @@ export default function Attendance() {
           <option value="all">All Departments</option>
           {departments.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
+        {isAdminOrHR && (
+          <Button variant="default" onClick={() => setManualModalOpen(true)} className="ml-auto">
+            Manual
+          </Button>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -604,6 +771,147 @@ export default function Attendance() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={saving}>Cancel</Button>
             <Button onClick={performSave} disabled={saving}>{saving ? 'Saving...' : 'Confirm & Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Attendance Entry Dialog */}
+      {isAdminOrHR && (
+        <Dialog open={manualModalOpen} onOpenChange={o => { if(!o) { setManualModalOpen(false); }}}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Manual Attendance Entry</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-1">
+                <Label>Employee</Label>
+                <select 
+                  className="w-full h-10 px-3 rounded-md border border-border bg-background text-sm"
+                  value={manualForm.employee_id}
+                  onChange={e => setManualForm(f => ({ ...f, employee_id: e.target.value }))}
+                >
+                  <option value="" disabled>Select Employee</option>
+                  {employees.map(e => <option key={e.id} value={e.id}>{e.employee_code} — {e.last_name}, {e.first_name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Attendance Date</Label>
+                <Input type="date" value={manualForm.date} onChange={e => setManualForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-muted-foreground text-xs uppercase font-semibold">Current Attendance Status</Label>
+                <div className="font-medium text-sm border bg-muted/30 px-3 py-2 rounded-md">{manualCurrentStatus}</div>
+              </div>
+              <div className="space-y-1">
+                <Label>Attendance Status Dropdown</Label>
+                <select 
+                  className="w-full h-10 px-3 rounded-md border border-border bg-background text-sm"
+                  value={manualForm.status}
+                  onChange={e => setManualForm(f => ({ ...f, status: e.target.value }))}
+                >
+                  <option value="Day Off">Day Off</option>
+                  <option value="Rest Day">Rest Day</option>
+                  <option value="Holiday">Holiday</option>
+                  <option value="Sick Leave">Sick Leave</option>
+                  <option value="Vacation Leave">Vacation Leave</option>
+                  <option value="Official Business">Official Business</option>
+                  <option value="Training">Training</option>
+                  <option value="Absent">Absent</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Reason</Label>
+                <Input 
+                  value={manualForm.reason} 
+                  onChange={e => setManualForm(f => ({ ...f, reason: e.target.value }))} 
+                  placeholder="Reason for manual entry" 
+                />
+              </div>
+
+              {isFutureDate(manualForm.date) && (
+                <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md border border-destructive/20">
+                  <p className="font-semibold mb-1">Manual Attendance Not Allowed</p>
+                  <p>Future attendance records cannot be created or modified. Please select today's date or a previous date.</p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setManualModalOpen(false)}>Cancel</Button>
+              <Button onClick={handleManualSubmit} disabled={saving || isFutureDate(manualForm.date)}>
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Payroll Already Processed Warning */}
+      <Dialog open={payrollProcessedWarningOpen} onOpenChange={setPayrollProcessedWarningOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Payroll Already Processed</DialogTitle>
+            <DialogDescription className="pt-2 text-foreground">
+              The selected attendance belongs to a payroll period that has already been processed.<br/><br/>
+              Changing this attendance may affect payroll computations. Would you like to continue?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayrollProcessedWarningOpen(false)}>Cancel</Button>
+            <Button onClick={() => {
+              setPayrollProcessedWarningOpen(false);
+              setManualSaveConfirmOpen(true);
+            }}>
+              Override & Reprocess Payroll
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Save Confirmation */}
+      <Dialog open={manualSaveConfirmOpen} onOpenChange={setManualSaveConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Payroll Reprocessing Required</DialogTitle>
+            <div className="pt-3 space-y-2 text-sm">
+              <div className="grid grid-cols-3">
+                <span className="text-muted-foreground">Employee:</span>
+                <span className="col-span-2 font-medium">
+                  {employees.find(e => e.id === manualForm.employee_id)?.first_name} {employees.find(e => e.id === manualForm.employee_id)?.last_name}
+                </span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-muted-foreground">Attendance Date:</span>
+                <span className="col-span-2 font-medium">{manualForm.date}</span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-muted-foreground">Old Status:</span>
+                <span className="col-span-2 font-medium">{manualCurrentStatus}</span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-muted-foreground">New Status:</span>
+                <span className="col-span-2 font-medium">{manualForm.status}</span>
+              </div>
+              <div className="grid grid-cols-3">
+                <span className="text-muted-foreground">Reason:</span>
+                <span className="col-span-2 font-medium">{manualForm.reason}</span>
+              </div>
+              
+              <div className="pt-3">
+                <p className="font-semibold mb-2">This action will automatically:</p>
+                <ul className="space-y-1 text-muted-foreground">
+                  <li>✓ Update Attendance</li>
+                  <li>✓ Update Payroll</li>
+                  <li>✓ Update Payslip</li>
+                  <li>✓ Update Attendance Report</li>
+                  <li>✓ Update Payroll Report</li>
+                </ul>
+                <p className="mt-4">Continue?</p>
+              </div>
+            </div>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualSaveConfirmOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={executeManualSave} disabled={saving}>{saving ? 'Saving...' : 'Proceed'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
