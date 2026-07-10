@@ -152,6 +152,8 @@ function SelfieViewer({ src, label }: { src: string | null; label: string }) {
 export default function Attendance() {
   const { hasRole, user, roles } = useAuth();
   const isAdminOrHR = hasRole('admin') || hasRole('hr');
+  const isManager = hasRole('payroll_officer'); // manager-style view-only
+  const canChangeStatus = isAdminOrHR;
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterMode, setFilterMode] = useState<"day" | "month" | "range">("day");
@@ -161,10 +163,15 @@ export default function Attendance() {
   const [dateTo, setDateTo] = useState(new Date().toISOString().split("T")[0]);
   const [employeeFilter, setEmployeeFilter] = useState<string>("all");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [employees, setEmployees] = useState<any[]>([]);
 
   const [selfieModal, setSelfieModal] = useState<{ record: AttendanceRecord; type: 'in' | 'out' } | null>(null);
   const [editModal, setEditModal] = useState<AttendanceRecord | null>(null);
+  const [statusModal, setStatusModal] = useState<{ record: AttendanceRecord; newStatus: AttendanceStatus } | null>(null);
+  const [statusReason, setStatusReason] = useState<string>("");
+  const [statusSaving, setStatusSaving] = useState(false);
   const [editForm, setEditForm] = useState({
     date: '', time_in: '', time_out: '',
     location_label_in: '', location_label_out: '',
