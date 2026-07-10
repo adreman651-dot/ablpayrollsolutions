@@ -566,6 +566,49 @@ export default function Attendance() {
                         {isLocked && <Lock className="w-3 h-3 text-muted-foreground" aria-label="Locked" />}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const current = (r.attendance_status as AttendanceStatus | null) || null;
+                        const meta = getStatusMeta(current || undefined);
+                        const label = current ? `${meta?.icon ?? ""} ${current}` : "Set Status";
+                        if (!canChangeStatus) {
+                          return current
+                            ? <Badge variant="outline" className={meta?.badgeClass}>{label}</Badge>
+                            : <span className="text-xs text-muted-foreground">—</span>;
+                        }
+                        return (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className={`h-8 justify-between gap-2 min-w-[180px] ${meta?.badgeClass ?? ""}`}
+                              >
+                                <span className="truncate">{label}</span>
+                                <ChevronDown className="w-3 h-3 opacity-70 shrink-0" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52 max-h-[70vh] overflow-y-auto">
+                              <DropdownMenuLabel>Attendance Status</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {ATTENDANCE_STATUSES.map((s) => (
+                                <DropdownMenuItem
+                                  key={s.value}
+                                  onSelect={() => { setStatusReason(""); setStatusModal({ record: r, newStatus: s.value }); }}
+                                >
+                                  <span className="mr-2">{s.icon}</span>{s.label}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        );
+                      })()}
+                      {r.status_reason && (
+                        <div className="text-[10px] text-muted-foreground mt-1 truncate max-w-[220px]" title={r.status_reason}>
+                          Reason: {r.status_reason}
+                        </div>
+                      )}
+                    </TableCell>
                     {isAdminOrHR && (
                       <TableCell>
                         <Button size="sm" variant="ghost" onClick={() => openEditModal(r)} className="h-8 w-8 p-0" title={isLocked ? "Override Attendance" : "Edit Record"}>
