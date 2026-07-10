@@ -478,6 +478,14 @@ export default function Attendance() {
           <option value="all">All Departments</option>
           {departments.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-10 px-3 rounded-md border border-border bg-background text-sm min-w-[180px]">
+          <option value="all">All Statuses</option>
+          {ATTENDANCE_STATUSES.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
+        </select>
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search name, code, status, reason…" className="pl-8 h-10" />
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
