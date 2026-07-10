@@ -164,7 +164,7 @@ export default function Reports() {
           if (dateFrom) q = q.gte("date", dateFrom);
           if (dateTo) q = q.lte("date", dateTo);
           const { data: records } = await q;
-          setColumns(["Employee", "Code", "Date", "Time In", "Time Out", "Hours", "Late Min", "Status"]);
+          setColumns(["Employee", "Code", "Date", "Attendance Status", "Reason", "Time In", "Time Out", "Hours", "Late Min", "Status"]);
           setData((records || []).map(r => {
             let hours = "—";
             if (r.time_in && r.time_out) {
@@ -175,6 +175,8 @@ export default function Reports() {
               Employee: r.employees ? `${r.employees.last_name}, ${r.employees.first_name}` : "—",
               Code: r.employees?.employee_code || "—",
               Date: r.date,
+              "Attendance Status": (r as any).attendance_status || "—",
+              Reason: (r as any).status_reason || "",
               "Time In": r.time_in ? new Date(r.time_in).toLocaleTimeString() : "—",
               "Time Out": r.time_out ? new Date(r.time_out).toLocaleTimeString() : "—",
               Hours: hours,
