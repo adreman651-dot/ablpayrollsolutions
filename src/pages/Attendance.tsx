@@ -500,16 +500,17 @@ export default function Attendance() {
               <TableHead className="text-center w-28">Time In Selfie</TableHead>
               <TableHead className="text-center w-28">Time Out Selfie</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead className="min-w-[200px]">Attendance Status</TableHead>
               {isAdminOrHR && <TableHead className="w-20">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
-            ) : records.length === 0 ? (
-              <TableRow><TableCell colSpan={10} className="text-center py-12 text-muted-foreground">No records for the selected filters</TableCell></TableRow>
+              <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground">Loading...</TableCell></TableRow>
+            ) : filteredRecords.length === 0 ? (
+              <TableRow><TableCell colSpan={11} className="text-center py-12 text-muted-foreground">No records for the selected filters</TableCell></TableRow>
             ) : (
-              records.map(r => {
+              filteredRecords.map(r => {
                 const isLocked = r.locked || r.status === 'COMPLETED' || (!!r.time_in && !!r.time_out);
                 return (
                   <TableRow key={r.id}>
