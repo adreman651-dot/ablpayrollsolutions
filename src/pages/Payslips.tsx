@@ -83,11 +83,24 @@ export default function Payslips() {
     });
   }, [rows, search]);
 
-  const buildPayslip = (r: Row): PayslipData => {
+  const buildPayslip = async (r: Row): Promise<PayslipData> => {
     const e = r.employees!;
     const run = r.payroll_runs!;
     const dailyRate = computeDailyRate(e.basic_salary);
-    const daysWorked = dailyRate > 0 ? +(r.basic_pay / dailyRate).toFixed(2) : 0;
+    
+    let daysWorked = 0;
+    if (e.payroll_type === "daily_rate" || e.payroll_type === "Daily") {
+      const { data: att } = await supabase.from("attendance")
+        .select("time_in, time_out, status")
+        .eq("employee_id", r.employee_id)
+        .gte("date", run.period_start)
+        .lte("date", run.period_end);
+      
+      daysWorked = (att || []).filter(a => a.time_in && a.time_out && a.status === "PRESENT").length;
+    } else {
+      daysWorked = dailyRate > 0 ? +(r.basic_pay / dailyRate).toFixed(2) : 0;
+    }
+
     return {
       companyName,
       paymentDate: new Date(run.run_date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
@@ -116,14 +129,23 @@ export default function Payslips() {
       withholdingTax: r.withholding_tax,
       ytdIncomeTxNtx: 0, ytdIncomeTx: 0, ytdIncomeNtx: 0, ytd13thMonth: 0,
       workDetails: [],
+      payrollType: e.payroll_type
     };
   };
 
-  const exportRowPDF = (r: Row) => {
-    const doc = generatePayslipsPDF([buildPayslip(r)]);
-    const run = r.payroll_runs!;
-    doc.save(`payslip_${r.employees?.employee_code}_${run.period_start}_to_${run.period_end}.pdf`);
-    toast.success("Payslip PDF exported");
+  const exportRowPDF = async (r: Row) => {
+    toast.loading("Exporting PDF...");
+    try {
+      const data = await buildPayslip(r);
+      const doc = generatePayslipsPDF([data]);
+      const run = r.payroll_runs!;
+      doc.save(`payslip_${r.employees?.employee_code}_${run.period_start}_to_${run.period_end}.pdf`);
+      toast.dismiss();
+      toast.success("Payslip PDF exported");
+    } catch(e) {
+      toast.dismiss();
+      toast.error("Error generating PDF");
+    }
   };
 
   const exportRowExcel = (r: Row) => {
@@ -151,11 +173,19 @@ export default function Payslips() {
     toast.success("Payslip Excel exported");
   };
 
-  const exportAllFilteredPDF = () => {
+  const exportAllFilteredPDF = async () => {
     if (!filtered.length) return toast.error("No payslips to export");
-    const doc = generatePayslipsPDF(filtered.map(buildPayslip));
-    doc.save(`payslips_${new Date().toISOString().slice(0, 10)}.pdf`);
-    toast.success(`Exported ${filtered.length} payslip(s)`);
+    toast.loading("Exporting all PDFs...");
+    try {
+      const data = await Promise.all(filtered.map(buildPayslip));
+      const doc = generatePayslipsPDF(data);
+      doc.save(`payslips_${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.dismiss();
+      toast.success(`Exported ${filtered.length} payslip(s)`);
+    } catch(e) {
+      toast.dismiss();
+      toast.error("Error generating PDFs");
+    }
   };
 
   const fmt = (n: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(n || 0);

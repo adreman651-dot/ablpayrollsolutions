@@ -421,7 +421,6 @@ export default function Payroll() {
     exportPayrollExcel(rows as any, `payroll_${viewingRun.period_start}_to_${viewingRun.period_end}.xlsx`);
     toast.success("Excel exported");
   };
-
   const exportPayslipsPDF = async () => {
     if (!viewingRun) return;
     const { data: cn } = await supabase.from("system_settings").select("value").eq("key", "company_name").maybeSingle();
@@ -429,7 +428,15 @@ export default function Payroll() {
 
     const payslips: PayslipData[] = viewItems.map(item => {
       const e = item.employees!;
-      const attInfo = attendanceMap[item.employee_id] || { days: 0 };
+      const attInfo = attendanceMap[item.employee_id] || { days: 0, records: [] };
+      
+      let daysWorkedForPdf = 0;
+      if (e.payroll_type === "daily_rate" || e.payroll_type === "Daily") {
+        daysWorkedForPdf = (attInfo.records || []).filter((a: any) => a.time_in && a.time_out && a.status === "PRESENT").length;
+      } else {
+        daysWorkedForPdf = attInfo.days;
+      }
+
       const dailyRate = getEffectiveDailyRate(e.basic_salary, e.payroll_type);
       return {
         companyName,
@@ -438,10 +445,11 @@ export default function Payroll() {
         periodEnd: new Date(viewingRun.period_end).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
         employeeCode: e.employee_code,
         employeeName: `${e.last_name}, ${e.first_name}`,
-        department: e.department || "—",
+        department: e.department || "-",
         basicSalary: e.basic_salary,
         dailyRate: dailyRate,
-        daysWorked: attInfo.days,
+        daysWorked: daysWorkedForPdf,
+        payrollType: e.payroll_type,
         hoursWorked: attInfo.days * 8,
         straightTime: item.basic_pay,
         holidayPay: item.holiday_pay || 0,
