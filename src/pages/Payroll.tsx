@@ -442,6 +442,7 @@ export default function Payroll() {
         department: e.department || "—",
         basicSalary: e.basic_salary,
         dailyRate: dailyRate,
+        payrollType: e.payroll_type,
         daysWorked: attInfo.days,
         hoursWorked: attInfo.days * 8,
         straightTime: item.basic_pay,
