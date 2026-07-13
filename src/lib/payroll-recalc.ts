@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { computeDailyRate, computeWithholdingTax, computeSSS, computePhilHealth, computePagIBIG } from "./payroll-utils";
-import { getStatusMeta } from "./attendanceStatus";
+// Days Worked counts only Present attendance with complete Time In + Time Out.
 
 export async function recalculatePayrollForDate(dateString: string) {
   // Find all payroll runs that cover this date
@@ -36,26 +36,20 @@ export async function recalculatePayrollForDate(dateString: string) {
           .gte("date", run.period_start)
           .lte("date", run.period_end);
 
-        // Attendance Status drives payroll counting when set.
-        // - countsAsWorkDay: paid day (Holiday/SL/VL/OB/Training/Present)
-        // - Absent / Day Off / Rest Day => not counted (Rest Day paid handling
-        //   is deferred to Payroll Settings; default excludes)
+        // Days Worked = ONLY records with complete Time In + Time Out AND
+        // attendance_status is Present (or unset/legacy — treat as Present
+        // when both punches exist). Leaves, Day Off, Rest Day, Holiday,
+        // Absent, and all other non-working statuses are NOT counted.
         const daysPresent = (attendance || []).filter((a: any) => {
-          const meta = getStatusMeta(a.attendance_status);
-          if (meta) return meta.countsAsWorkDay;
-          return a.time_in && a.time_out;
+          if (!a.time_in || !a.time_out) return false;
+          const status = a.attendance_status;
+          if (!status) return true; // legacy record with both punches
+          return status === 'Present';
         }).length;
 
-        const { data: leaveData } = await supabase.from("leaves")
-          .select("duration")
-          .eq("employee_id", emp.id)
-          .eq("status", "approved")
-          .gte("start_date", run.period_start)
-          .lte("end_date", run.period_end);
-        const leaveDays = (leaveData || []).reduce((sum, l) => sum + (l.duration || 0), 0);
-
         const dailyRate = emp.payroll_type === "hourly_rate" ? emp.basic_salary * 8 : computeDailyRate(emp.basic_salary);
-        const effectiveDays = daysPresent + leaveDays;
+        const leaveDays = 0;
+        const effectiveDays = daysPresent;
         const grossPay = +(dailyRate * effectiveDays).toFixed(2);
 
         const shouldDeductSSS = emp.sss_schedule === "both" || emp.sss_schedule === currentCutoff;
