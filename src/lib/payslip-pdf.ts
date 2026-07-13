@@ -64,8 +64,10 @@ function drawSlip(
   const rightAmtX = 203;
 
   const dailyRate = p.dailyRate || 0;
+  const isDaily = p.payrollType === "daily_rate";
+
   let computedBasicPay = p.straightTime || p.basicSalary;
-  if (p.payrollType === "daily_rate" || p.payrollType === "Daily") {
+  if (isDaily) {
     computedBasicPay = p.daysWorked * dailyRate;
   }
 
@@ -78,7 +80,7 @@ function drawSlip(
   }
 
   // If Monthly, maybe Gross Pay is exactly what was stored
-  const grossPay = (p.payrollType === "daily_rate" || p.payrollType === "Daily") ? computedGrossPay : (p.grossPay ?? p.totalTaxable);
+  const grossPay = isDaily ? computedGrossPay : (p.grossPay ?? p.totalTaxable);
   const netPay = grossPay - p.totalDeductions;
 
   const tax = p.withholdingTax ?? 0;
@@ -129,7 +131,7 @@ function drawSlip(
   // ── Build Rows ──────────────────────────────────────────────────────
   const earnings: Array<[string, number | null, boolean]> = [];
   
-  if (p.payrollType === "daily_rate" || p.payrollType === "Daily") {
+  if (isDaily) {
     earnings.push([`No. of Days Worked: ${p.daysWorked} Days`, null, false]);
     earnings.push([`Daily Rate`, dailyRate, true]);
     earnings.push([`Basic Pay (${p.daysWorked} Days × ${peso(dailyRate)})`, computedBasicPay, true]);

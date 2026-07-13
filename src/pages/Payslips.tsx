@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { FileText, FileSpreadsheet, Search } from "lucide-react";
+import { FileText, FileSpreadsheet, Search, Trash2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { generatePayslipsPDF, PayslipData } from "@/lib/payslip-pdf";
 import { exportPayrollExcel } from "@/lib/payroll-export";
@@ -86,19 +87,23 @@ export default function Payslips() {
   const buildPayslip = async (r: Row): Promise<PayslipData> => {
     const e = r.employees!;
     const run = r.payroll_runs!;
-    const dailyRate = computeDailyRate(e.basic_salary);
+    const isDaily = e.payroll_type === "daily_rate";
+    // For daily employees, basic_salary IS the daily rate (as stored in Employees module)
+    // For monthly employees, compute daily rate from monthly salary
+    const dailyRate = isDaily ? e.basic_salary : computeDailyRate(e.basic_salary);
     
     let daysWorked = 0;
-    if (e.payroll_type === "daily_rate" || e.payroll_type === "Daily") {
+    if (isDaily) {
       const { data: att } = await supabase.from("attendance")
-        .select("date, time_in, time_out, status")
+        .select("date, time_in, time_out, status, attendance_status")
         .eq("employee_id", r.employee_id)
         .gte("date", run.period_start)
         .lte("date", run.period_end);
       
-      const validAtt = (att || []).filter(a => 
-        a.time_in && a.time_out && a.status && ["present", "late", "completed", "on time"].includes(a.status.toLowerCase())
-      );
+      const validAtt = (att || []).filter(a => {
+        const eff = a.attendance_status || a.status;
+        return a.time_in && a.time_out && eff && ["present", "late", "completed", "on time"].includes(eff.trim().toLowerCase());
+      });
       const uniqueDates = new Set(validAtt.map(a => a.date));
       daysWorked = uniqueDates.size;
     } else {
@@ -192,6 +197,16 @@ export default function Payslips() {
     }
   };
 
+  const deleteRow = async (r: Row) => {
+    const { error } = await supabase.from("payroll_items").delete().eq("id", r.id);
+    if (error) {
+      toast.error("Failed to delete payslip: " + error.message);
+    } else {
+      toast.success("Payslip deleted");
+      load();
+    }
+  };
+
   const fmt = (n: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(n || 0);
 
   return (
@@ -258,6 +273,29 @@ export default function Payslips() {
                     <Button size="sm" variant="outline" onClick={() => exportRowExcel(r)}>
                       <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Excel
                     </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="destructive">
+                          <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Payslip</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete the payslip for{" "}
+                            <strong>{r.employees ? `${r.employees.last_name}, ${r.employees.first_name}` : "this employee"}</strong>?
+                            This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => deleteRow(r)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </TableCell>
               </TableRow>

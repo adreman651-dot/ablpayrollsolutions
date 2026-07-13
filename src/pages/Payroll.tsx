@@ -316,11 +316,11 @@ export default function Payroll() {
     });
     setOverrides(initOverrides);
 
-    const empIds = items.map((d: any) => d.employee_id);
-    if (empIds.length) {
-      const { data: att } = await supabase.from("attendance")
-        .select("employee_id, date, time_in, time_out, status, location_label_in, location_label_out, total_hours, photo_in_url")
-        .in("employee_id", empIds)
+      const empIds = items.map((d: any) => d.employee_id);
+      if (empIds.length) {
+        const { data: att } = await supabase.from("attendance")
+          .select("employee_id, date, time_in, time_out, status, attendance_status, location_label_in, location_label_out, total_hours, photo_in_url")
+          .in("employee_id", empIds)
         .gte("date", run.period_start)
         .lte("date", run.period_end)
         .order("date", { ascending: true });
@@ -421,20 +421,23 @@ export default function Payroll() {
     exportPayrollExcel(rows as any, `payroll_${viewingRun.period_start}_to_${viewingRun.period_end}.xlsx`);
     toast.success("Excel exported");
   };
+
   const exportPayslipsPDF = async () => {
     if (!viewingRun) return;
     const { data: cn } = await supabase.from("system_settings").select("value").eq("key", "company_name").maybeSingle();
-    const companyName = cn?.value || "ABL PAYROLL SOLUTIONS";
+    const companyName = cn?.value ? String(cn.value).replace(/^"|"$/g, "") : "ABL PAYROLL SOLUTIONS";
 
     const payslips: PayslipData[] = viewItems.map(item => {
       const e = item.employees!;
       const attInfo = attendanceMap[item.employee_id] || { days: 0, records: [] };
       
+      const isDaily = e.payroll_type === "daily_rate";
       let daysWorkedForPdf = 0;
-      if (e.payroll_type === "daily_rate" || e.payroll_type === "Daily") {
-        const validAtt = (attInfo.records || []).filter((a: any) => 
-          a.time_in && a.time_out && a.status && ["present", "late", "completed", "on time"].includes(a.status.toLowerCase())
-        );
+      if (isDaily) {
+        const validAtt = (attInfo.records || []).filter((a: any) => {
+          const eff = a.attendance_status || a.status;
+          return a.time_in && a.time_out && eff && ["present", "late", "completed", "on time"].includes(eff.trim().toLowerCase());
+        });
         const uniqueDates = new Set(validAtt.map((a: any) => a.date));
         daysWorkedForPdf = uniqueDates.size;
       } else {
