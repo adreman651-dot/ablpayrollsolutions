@@ -432,7 +432,11 @@ export default function Payroll() {
       
       let daysWorkedForPdf = 0;
       if (e.payroll_type === "daily_rate" || e.payroll_type === "Daily") {
-        daysWorkedForPdf = (attInfo.records || []).filter((a: any) => a.time_in && a.time_out && a.status === "PRESENT").length;
+        const validAtt = (attInfo.records || []).filter((a: any) => 
+          a.time_in && a.time_out && a.status && ["present", "late", "completed", "on time"].includes(a.status.toLowerCase())
+        );
+        const uniqueDates = new Set(validAtt.map((a: any) => a.date));
+        daysWorkedForPdf = uniqueDates.size;
       } else {
         daysWorkedForPdf = attInfo.days;
       }

@@ -91,12 +91,16 @@ export default function Payslips() {
     let daysWorked = 0;
     if (e.payroll_type === "daily_rate" || e.payroll_type === "Daily") {
       const { data: att } = await supabase.from("attendance")
-        .select("time_in, time_out, status")
+        .select("date, time_in, time_out, status")
         .eq("employee_id", r.employee_id)
         .gte("date", run.period_start)
         .lte("date", run.period_end);
       
-      daysWorked = (att || []).filter(a => a.time_in && a.time_out && a.status === "PRESENT").length;
+      const validAtt = (att || []).filter(a => 
+        a.time_in && a.time_out && a.status && ["present", "late", "completed", "on time"].includes(a.status.toLowerCase())
+      );
+      const uniqueDates = new Set(validAtt.map(a => a.date));
+      daysWorked = uniqueDates.size;
     } else {
       daysWorked = dailyRate > 0 ? +(r.basic_pay / dailyRate).toFixed(2) : 0;
     }

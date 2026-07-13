@@ -63,9 +63,25 @@ function drawSlip(
   const leftAmtX = 102;
   const rightAmtX = 203;
 
-  const grossPay = p.grossPay ?? p.totalTaxable;
-  const tax = p.withholdingTax ?? 0;
   const dailyRate = p.dailyRate || 0;
+  let computedBasicPay = p.straightTime || p.basicSalary;
+  if (p.payrollType === "daily_rate" || p.payrollType === "Daily") {
+    computedBasicPay = p.daysWorked * dailyRate;
+  }
+
+  let computedGrossPay = computedBasicPay;
+  if (p.holidayPay > 0) computedGrossPay += p.holidayPay;
+  if (p.riceAllowance && p.riceAllowance > 0) computedGrossPay += p.riceAllowance;
+  if (p.riceAllowance2 && p.riceAllowance2 > 0) computedGrossPay += p.riceAllowance2;
+  if (p.totalNonTaxable > 0 && !p.riceAllowance && !p.riceAllowance2) {
+    computedGrossPay += p.totalNonTaxable;
+  }
+
+  // If Monthly, maybe Gross Pay is exactly what was stored
+  const grossPay = (p.payrollType === "daily_rate" || p.payrollType === "Daily") ? computedGrossPay : (p.grossPay ?? p.totalTaxable);
+  const netPay = grossPay - p.totalDeductions;
+
+  const tax = p.withholdingTax ?? 0;
 
   let y = yStart;
 
@@ -116,11 +132,11 @@ function drawSlip(
   if (p.payrollType === "daily_rate" || p.payrollType === "Daily") {
     earnings.push([`No. of Days Worked: ${p.daysWorked} Days`, null, false]);
     earnings.push([`Daily Rate`, dailyRate, true]);
-    earnings.push([`Basic Pay (${p.daysWorked} Days × ${peso(dailyRate)})`, p.daysWorked * dailyRate, true]);
+    earnings.push([`Basic Pay (${p.daysWorked} Days × ${peso(dailyRate)})`, computedBasicPay, true]);
   } else {
     earnings.push([`No. of Days Worked: ${p.daysWorked} Days`, null, false]);
     earnings.push([`Monthly Rate`, p.basicSalary, true]);
-    earnings.push([`Basic Pay`, p.straightTime || p.basicSalary, true]);
+    earnings.push([`Basic Pay`, computedBasicPay, true]);
   }
 
   if (p.holidayPay > 0) earnings.push(["Holiday Pay", p.holidayPay, true]);
@@ -175,7 +191,7 @@ function drawSlip(
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold").setFontSize(11);
   doc.text("NET PAY", leftX + 4, netY + 7);
-  doc.text(peso(Math.max(0, p.netPay)), rightAmtX, netY + 7, { align: "right" });
+  doc.text(peso(Math.max(0, netPay)), rightAmtX, netY + 7, { align: "right" });
   doc.setTextColor(0, 0, 0);
 
   // ── Signatures ───────────────────────────────────────────────────────
