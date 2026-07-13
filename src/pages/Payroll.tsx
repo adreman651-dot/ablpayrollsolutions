@@ -207,27 +207,26 @@ export default function Payroll() {
       const items = [];
 
       for (const emp of employees) {
-        // Only count days where employee has BOTH time_in and time_out
+        // Days Worked = ONLY records with complete Time In + Time Out AND
+        // attendance_status is 'Present' (or unset for legacy records).
+        // Leaves, Day Off, Rest Day, Holiday, Absent, and any other
+        // non-working status MUST NOT be counted.
         const { data: attendance } = await supabase.from("attendance")
-          .select("late_minutes, status, date, time_in, time_out")
+          .select("late_minutes, status, attendance_status, date, time_in, time_out")
           .eq("employee_id", emp.id)
           .gte("date", run.period_start)
           .lte("date", run.period_end);
 
-        const daysPresent = (attendance || []).filter(a =>
-          a.time_in && a.time_out  // Both must be present
-        ).length;
-
-        const { data: leaveData } = await supabase.from("leaves")
-          .select("duration")
-          .eq("employee_id", emp.id)
-          .eq("status", "approved")
-          .gte("start_date", run.period_start)
-          .lte("end_date", run.period_end);
-        const leaveDays = (leaveData || []).reduce((sum, l) => sum + (l.duration || 0), 0);
+        const daysPresent = (attendance || []).filter((a: any) => {
+          if (!a.time_in || !a.time_out) return false;
+          const status = a.attendance_status;
+          if (!status) return true;
+          return status === 'Present';
+        }).length;
 
         const dailyRate = getEffectiveDailyRate(emp.basic_salary, emp.payroll_type);
-        const effectiveDays = daysPresent + leaveDays;
+        const leaveDays = 0;
+        const effectiveDays = daysPresent;
         const basicPay = +(dailyRate * effectiveDays).toFixed(2);
         const grossPay = basicPay;
 
