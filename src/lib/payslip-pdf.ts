@@ -36,6 +36,7 @@ export interface PayslipData {
   // optional extras
   withholdingTax?: number;
   grossPay?: number;
+  payrollType?: string | null;
 }
 
 // jsPDF's built-in Helvetica cannot render ₱ (U+20B1).
