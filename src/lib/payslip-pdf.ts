@@ -36,6 +36,7 @@ export interface PayslipData {
   // optional extras
   withholdingTax?: number;
   grossPay?: number;
+  payrollType?: string | null;
 }
 
 // jsPDF's built-in Helvetica cannot render ₱ (U+20B1).
@@ -110,11 +111,20 @@ function drawSlip(
   doc.setFont("helvetica", "normal").setFontSize(8);
 
   // ── Build Rows ──────────────────────────────────────────────────────
-  const earnings: Array<[string, number | null, boolean]> = [
-    [`No. of Days Worked: ${p.daysWorked}`, null, false],
-    [`Daily Rate`, dailyRate, true],
-    [`Basic Pay (${p.daysWorked} days × ${peso(dailyRate)})`, grossPay, true],
-  ];
+  const isMonthly = (p.payrollType || "").toLowerCase().includes("month")
+    || (p.payrollType || "").toLowerCase() === "monthly_rate"
+    || (p.payrollType || "").toLowerCase() === "monthly";
+  const earnings: Array<[string, number | null, boolean]> = isMonthly
+    ? [
+        [`No. of Days Worked: ${p.daysWorked}`, null, false],
+        [`Monthly Rate`, p.basicSalary, true],
+        [`Basic Pay`, grossPay, true],
+      ]
+    : [
+        [`No. of Days Worked: ${p.daysWorked}`, null, false],
+        [`Daily Rate`, dailyRate, true],
+        [`Basic Pay (${p.daysWorked} Days × ${peso(dailyRate)})`, grossPay, true],
+      ];
   if (p.holidayPay > 0) earnings.push(["Holiday Pay", p.holidayPay, true]);
   if (p.riceAllowance && p.riceAllowance > 0) earnings.push(["Rice Allowance", p.riceAllowance, true]);
   if (p.riceAllowance2 && p.riceAllowance2 > 0) earnings.push(["Rice Allowance 2", p.riceAllowance2, true]);

@@ -60,7 +60,7 @@ export default function Payslips() {
     setLoading(true);
     const { data, error } = await supabase
       .from("payroll_items")
-      .select("*, employees(employee_code, first_name, last_name, department, basic_salary, payroll_type), payroll_runs(period_start, period_end, run_date, status)")
+      .select("*, employees(id, employee_code, first_name, last_name, department, basic_salary, payroll_type), payroll_runs(period_start, period_end, run_date, status)")
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) toast.error(error.message);
@@ -83,11 +83,26 @@ export default function Payslips() {
     });
   }, [rows, search]);
 
-  const buildPayslip = (r: Row): PayslipData => {
+  // Count ONLY attendance records with complete Time In + Time Out
+  // AND attendance_status === 'Present' (or unset for legacy records).
+  const countDaysWorked = async (employeeDbId: string, periodStart: string, periodEnd: string) => {
+    const { data } = await supabase.from("attendance")
+      .select("time_in, time_out, attendance_status")
+      .eq("employee_id", employeeDbId)
+      .gte("date", periodStart)
+      .lte("date", periodEnd);
+    return (data || []).filter((a: any) => {
+      if (!a.time_in || !a.time_out) return false;
+      const st = a.attendance_status;
+      return !st || st === 'Present';
+    }).length;
+  };
+
+  const buildPayslip = async (r: Row): Promise<PayslipData> => {
     const e = r.employees!;
     const run = r.payroll_runs!;
     const dailyRate = computeDailyRate(e.basic_salary);
-    const daysWorked = dailyRate > 0 ? +(r.basic_pay / dailyRate).toFixed(2) : 0;
+    const daysWorked = await countDaysWorked((e as any).id, run.period_start, run.period_end);
     return {
       companyName,
       paymentDate: new Date(run.run_date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
@@ -98,6 +113,7 @@ export default function Payslips() {
       department: e.department || "—",
       basicSalary: e.basic_salary,
       dailyRate,
+      payrollType: e.payroll_type,
       daysWorked,
       hoursWorked: daysWorked * 8,
       straightTime: r.basic_pay,
@@ -119,18 +135,18 @@ export default function Payslips() {
     };
   };
 
-  const exportRowPDF = (r: Row) => {
-    const doc = generatePayslipsPDF([buildPayslip(r)]);
+  const exportRowPDF = async (r: Row) => {
+    const doc = generatePayslipsPDF([await buildPayslip(r)]);
     const run = r.payroll_runs!;
     doc.save(`payslip_${r.employees?.employee_code}_${run.period_start}_to_${run.period_end}.pdf`);
     toast.success("Payslip PDF exported");
   };
 
-  const exportRowExcel = (r: Row) => {
+  const exportRowExcel = async (r: Row) => {
     const e = r.employees!;
     const run = r.payroll_runs!;
     const dailyRate = computeDailyRate(e.basic_salary);
-    const daysWorked = dailyRate > 0 ? +(r.basic_pay / dailyRate).toFixed(2) : 0;
+    const daysWorked = await countDaysWorked((e as any).id, run.period_start, run.period_end);
     exportPayrollExcel([{
       employee_id: e.employee_code,
       employee_name: `${e.last_name}, ${e.first_name}`,
@@ -151,12 +167,14 @@ export default function Payslips() {
     toast.success("Payslip Excel exported");
   };
 
-  const exportAllFilteredPDF = () => {
+  const exportAllFilteredPDF = async () => {
     if (!filtered.length) return toast.error("No payslips to export");
-    const doc = generatePayslipsPDF(filtered.map(buildPayslip));
+    const payslips = await Promise.all(filtered.map(buildPayslip));
+    const doc = generatePayslipsPDF(payslips);
     doc.save(`payslips_${new Date().toISOString().slice(0, 10)}.pdf`);
     toast.success(`Exported ${filtered.length} payslip(s)`);
   };
+
 
   const fmt = (n: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(n || 0);
 

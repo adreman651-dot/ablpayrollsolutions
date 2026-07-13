@@ -318,7 +318,7 @@ export default function Payroll() {
     const empIds = items.map((d: any) => d.employee_id);
     if (empIds.length) {
       const { data: att } = await supabase.from("attendance")
-        .select("employee_id, date, time_in, time_out, status, location_label_in, location_label_out, total_hours, photo_in_url")
+        .select("employee_id, date, time_in, time_out, status, attendance_status, location_label_in, location_label_out, total_hours, photo_in_url")
         .in("employee_id", empIds)
         .gte("date", run.period_start)
         .lte("date", run.period_end)
@@ -327,8 +327,10 @@ export default function Payroll() {
       const map: Record<string, any> = {};
       (att || []).forEach((a: any) => {
         const cur = map[a.employee_id] || { days: 0, records: [], locations: [] };
-        // Count as 1 day only if both time_in AND time_out are present
-        if (a.time_in && a.time_out) cur.days += 1;
+        // Count only Present attendance with complete Time In + Time Out
+        const st = a.attendance_status;
+        const isPresent = !!a.time_in && !!a.time_out && (!st || st === 'Present');
+        if (isPresent) cur.days += 1;
         if (a.location_label_in) cur.locations.push(a.location_label_in);
         if (!cur.selfie_image_url && a.photo_in_url) cur.selfie_image_url = a.photo_in_url;
         cur.records.push(a);
@@ -440,6 +442,7 @@ export default function Payroll() {
         department: e.department || "—",
         basicSalary: e.basic_salary,
         dailyRate: dailyRate,
+        payrollType: e.payroll_type,
         daysWorked: attInfo.days,
         hoursWorked: attInfo.days * 8,
         straightTime: item.basic_pay,
