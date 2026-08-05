@@ -849,7 +849,7 @@ export default function Attendance() {
                     </TableCell>
                     {isAdminOrHR && (
                       <TableCell>
-                        <Button size="sm" variant="ghost" onClick={() => openEditModal(r)} className="h-8 w-8 p-0" title={isLocked ? "Override Attendance" : "Edit Record"}>
+                        <Button size="sm" variant="ghost" onClick={() => openEditModal(r)} className="h-8 w-8 p-0" title={(isLocked || r.attendance_status === 'Absent') ? "Override Attendance" : "Edit Record"}>
                           <Pencil className="w-4 h-4" />
                         </Button>
                       </TableCell>
