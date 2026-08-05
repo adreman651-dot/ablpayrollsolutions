@@ -587,11 +587,18 @@ export default function Attendance() {
 
   const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
   const totals = {
-    days: new Set(filteredRecords.map(r => `${r.employee_id}_${r.date}`)).size,
+    // Days Worked counts only completed Present days (Time In + Time Out).
+    days: new Set(
+      filteredRecords
+        .filter(r => !!r.time_in && !!r.time_out && (!r.attendance_status || r.attendance_status === 'Present'))
+        .map(r => `${r.employee_id}_${r.date}`)
+    ).size,
+    absent: filteredRecords.filter(r => r.attendance_status === 'Absent').length,
     hours: filteredRecords.reduce((s, r: any) => s + (r.total_hours || 0), 0),
     late: filteredRecords.filter((r: any) => (r.late_minutes || 0) > 0).length,
     undertime: filteredRecords.filter((r: any) => (r.undertime_minutes || 0) > 0).length,
   };
+
 
   const performStatusChange = async () => {
     if (!statusModal) return;
