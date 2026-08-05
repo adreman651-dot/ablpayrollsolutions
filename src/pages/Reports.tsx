@@ -10,6 +10,8 @@ import { formatCurrency, WORKING_DAYS_PER_MONTH } from "@/lib/payroll-utils";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { buildAutoAbsentRows } from "@/lib/autoAbsent";
+
 
 const reportTypes = [
   { value: "payroll_detail", label: "Payroll Detailed Report" },
