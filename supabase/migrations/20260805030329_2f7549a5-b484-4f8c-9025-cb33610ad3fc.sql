@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS attendance_employee_date_uidx ON public.attendance (employee_id, date);

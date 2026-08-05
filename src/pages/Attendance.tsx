@@ -18,6 +18,8 @@ import { recalculatePayrollForDate } from "@/lib/payroll-recalc";
 import { getSelfieUrl } from "@/lib/selfieUrl";
 import { Capacitor } from "@capacitor/core";
 import { ATTENDANCE_STATUSES, getStatusMeta, type AttendanceStatus } from "@/lib/attendanceStatus";
+import { buildAutoAbsentRows, isVirtualAbsent, materializeAbsent } from "@/lib/autoAbsent";
+
 
 interface AttendanceRecord {
   id: string;
@@ -334,26 +336,52 @@ export default function Attendance() {
   };
   // ── End Manual Attendance ────────────────────────────────────────────
 
+  const currentRange = (): { from: string; to: string } => {
+    if (filterMode === "day") return { from: dateFilter, to: dateFilter };
+    if (filterMode === "month") {
+      const [y, m] = monthFilter.split("-").map(Number);
+      const endDate = `${monthFilter}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+      return { from: `${monthFilter}-01`, to: endDate };
+    }
+    return { from: dateFrom, to: dateTo };
+  };
+
   const fetchAttendance = async () => {
     setLoading(true);
+    const range = currentRange();
     let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code, department)").order("date", { ascending: false }).order("time_in", { ascending: false });
-    if (filterMode === "day") query = query.eq("date", dateFilter);
-    else if (filterMode === "month") {
-      const [y, m] = monthFilter.split("-").map(Number);
-      const start = `${monthFilter}-01`;
-      const endDate = new Date(y, m, 0).toISOString().split("T")[0];
-      query = query.gte("date", start).lte("date", endDate);
-    } else query = query.gte("date", dateFrom).lte("date", dateTo);
+    query = query.gte("date", range.from).lte("date", range.to);
     if (employeeFilter !== "all") query = query.eq("employee_id", employeeFilter);
     const { data, error } = await query;
     if (error) toast.error(error.message);
     else {
       let rows = (data || []) as any[];
       if (departmentFilter !== "all") rows = rows.filter(r => r.employees?.department === departmentFilter);
-      setRecords(rows as any);
+
+      // Automatic ABSENT for past working days without any attendance record.
+      let virtuals: any[] = [];
+      try {
+        virtuals = await buildAutoAbsentRows({
+          from: range.from,
+          to: range.to,
+          existing: (data || []).map((r: any) => ({ employee_id: r.employee_id, date: r.date })),
+          employeeId: employeeFilter,
+          department: departmentFilter,
+        });
+      } catch (e) {
+        console.warn("Auto-absent generation failed", e);
+      }
+
+      const merged = [...rows, ...virtuals].sort((a, b) =>
+        a.date === b.date
+          ? String(a.employees?.last_name || "").localeCompare(String(b.employees?.last_name || ""))
+          : (a.date < b.date ? 1 : -1)
+      );
+      setRecords(merged as any);
     }
     setLoading(false);
   };
+
 
   const openEditModal = (r: AttendanceRecord) => {
     setEditModal(r);
@@ -417,7 +445,23 @@ export default function Attendance() {
       };
       if (hoursWorked !== null) updates.total_hours = hoursWorked;
 
-      const { error } = await supabase.from('attendance').update(updates).eq('id', editModal.id);
+      const wasAbsent = isVirtualAbsent(editModal.id) || editModal.attendance_status === 'Absent';
+      if (wasAbsent && timeInISO) {
+        updates.attendance_status = 'Present';
+        updates.status_reason = editForm.reason.trim();
+        updates.status_modified_by = user?.id ?? null;
+        updates.status_modified_by_email = user?.email ?? null;
+        updates.status_modified_by_role = roles?.[0] || 'admin';
+        updates.status_modified_at = new Date().toISOString();
+      }
+
+      // Virtual (auto-generated ABSENT) rows are materialised before update,
+      // keyed on employee_id + date so no duplicate record can be created.
+      const targetId = isVirtualAbsent(editModal.id)
+        ? await materializeAbsent(editModal.employee_id, editModal.date)
+        : editModal.id;
+
+      const { error } = await supabase.from('attendance').update(updates).eq('id', targetId);
       if (error) throw error;
 
       // Cloud override audit trail
@@ -425,7 +469,8 @@ export default function Attendance() {
       const role = roles?.[0] || (isAdminOrHR ? 'admin' : 'user');
       try {
         await supabase.from('attendance_overrides').insert({
-          attendance_id: editModal.id,
+          attendance_id: targetId,
+
           employee_id: editModal.employee_id,
           employee_name: editModal.employees
             ? `${editModal.employees.first_name} ${editModal.employees.last_name}`
@@ -457,6 +502,26 @@ export default function Attendance() {
         console.warn('Override cloud audit write failed:', auditCloudErr);
       }
 
+      // Status-change audit when an ABSENT day is verified as worked
+      if (wasAbsent && timeInISO) {
+        try {
+          await supabase.from('attendance_status_logs').insert({
+            attendance_id: targetId,
+            employee_id: editModal.employee_id,
+            employee_name: empLabel(editModal),
+            attendance_date: editForm.date,
+            old_status: 'Absent',
+            new_status: 'Present',
+            reason: editForm.reason.trim(),
+            modified_by: user?.id ?? null,
+            modified_by_email: user?.email ?? null,
+            modified_by_role: role,
+            platform,
+            device: navigator.userAgent.substring(0, 200),
+          });
+        } catch (e) { console.warn('status log write failed', e); }
+      }
+
       // Local audit log
       try {
         await offlineExecute(
@@ -466,10 +531,11 @@ export default function Attendance() {
             user?.email ?? null,
             'OVERRIDE',
             'attendance',
-            editModal.id,
+            targetId,
             JSON.stringify({ reason: editForm.reason, old: editModal, new: editForm }),
             new Date().toISOString(),
           ]
+
         );
       } catch (auditErr) {
         console.warn('Audit log write failed:', auditErr);
@@ -521,11 +587,18 @@ export default function Attendance() {
 
   const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
   const totals = {
-    days: new Set(filteredRecords.map(r => `${r.employee_id}_${r.date}`)).size,
+    // Days Worked counts only completed Present days (Time In + Time Out).
+    days: new Set(
+      filteredRecords
+        .filter(r => !!r.time_in && !!r.time_out && (!r.attendance_status || r.attendance_status === 'Present'))
+        .map(r => `${r.employee_id}_${r.date}`)
+    ).size,
+    absent: filteredRecords.filter(r => r.attendance_status === 'Absent').length,
     hours: filteredRecords.reduce((s, r: any) => s + (r.total_hours || 0), 0),
     late: filteredRecords.filter((r: any) => (r.late_minutes || 0) > 0).length,
     undertime: filteredRecords.filter((r: any) => (r.undertime_minutes || 0) > 0).length,
   };
+
 
   const performStatusChange = async () => {
     if (!statusModal) return;
@@ -537,6 +610,10 @@ export default function Attendance() {
       const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
       const oldStatus = statusModal.record.attendance_status || statusModal.record.status || null;
 
+      const targetId = isVirtualAbsent(statusModal.record.id)
+        ? await materializeAbsent(statusModal.record.employee_id, statusModal.record.date)
+        : statusModal.record.id;
+
       const { error } = await supabase.from('attendance').update({
         attendance_status: statusModal.newStatus,
         status_reason: statusReason.trim() || null,
@@ -544,12 +621,12 @@ export default function Attendance() {
         status_modified_by_email: user?.email ?? null,
         status_modified_by_role: role,
         status_modified_at: nowISO,
-      }).eq('id', statusModal.record.id);
+      }).eq('id', targetId);
       if (error) throw error;
 
       try {
         await supabase.from('attendance_status_logs').insert({
-          attendance_id: statusModal.record.id,
+          attendance_id: targetId,
           employee_id: statusModal.record.employee_id,
           employee_name: empLabel(statusModal.record),
           attendance_date: statusModal.record.date,
@@ -568,7 +645,8 @@ export default function Attendance() {
         await offlineExecute(
           `INSERT INTO audit_logs (user_id, user_email, action, table_name, record_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
-            user?.id ?? null, user?.email ?? null, 'ATTENDANCE_STATUS_CHANGE', 'attendance', statusModal.record.id,
+            user?.id ?? null, user?.email ?? null, 'ATTENDANCE_STATUS_CHANGE', 'attendance', targetId,
+
             JSON.stringify({ old: oldStatus, new: statusModal.newStatus, reason: statusReason, date: statusModal.record.date }),
             nowISO,
           ]
@@ -597,12 +675,14 @@ export default function Attendance() {
         <p className="page-description">Track daily time-in and time-out with GPS and selfies</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Days Worked</div><div className="text-xl font-semibold">{totals.days}</div></div>
+        <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Absent</div><div className="text-xl font-semibold">{totals.absent}</div></div>
         <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Total Hours</div><div className="text-xl font-semibold">{totals.hours.toFixed(2)}</div></div>
         <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Late</div><div className="text-xl font-semibold">{totals.late}</div></div>
         <div className="bg-card border border-border rounded-xl p-3"><div className="text-xs text-muted-foreground">Undertime</div><div className="text-xl font-semibold">{totals.undertime}</div></div>
       </div>
+
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <select value={filterMode} onChange={e => setFilterMode(e.target.value as any)} className="h-10 px-3 rounded-md border border-border bg-background text-sm">
@@ -769,7 +849,7 @@ export default function Attendance() {
                     </TableCell>
                     {isAdminOrHR && (
                       <TableCell>
-                        <Button size="sm" variant="ghost" onClick={() => openEditModal(r)} className="h-8 w-8 p-0" title={isLocked ? "Override Attendance" : "Edit Record"}>
+                        <Button size="sm" variant="ghost" onClick={() => openEditModal(r)} className="h-8 w-8 p-0" title={(isLocked || r.attendance_status === 'Absent') ? "Override Attendance" : "Edit Record"}>
                           <Pencil className="w-4 h-4" />
                         </Button>
                       </TableCell>
