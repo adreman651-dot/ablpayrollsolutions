@@ -603,6 +603,10 @@ export default function Attendance() {
       const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
       const oldStatus = statusModal.record.attendance_status || statusModal.record.status || null;
 
+      const targetId = isVirtualAbsent(statusModal.record.id)
+        ? await materializeAbsent(statusModal.record.employee_id, statusModal.record.date)
+        : statusModal.record.id;
+
       const { error } = await supabase.from('attendance').update({
         attendance_status: statusModal.newStatus,
         status_reason: statusReason.trim() || null,
@@ -610,12 +614,12 @@ export default function Attendance() {
         status_modified_by_email: user?.email ?? null,
         status_modified_by_role: role,
         status_modified_at: nowISO,
-      }).eq('id', statusModal.record.id);
+      }).eq('id', targetId);
       if (error) throw error;
 
       try {
         await supabase.from('attendance_status_logs').insert({
-          attendance_id: statusModal.record.id,
+          attendance_id: targetId,
           employee_id: statusModal.record.employee_id,
           employee_name: empLabel(statusModal.record),
           attendance_date: statusModal.record.date,
@@ -634,7 +638,8 @@ export default function Attendance() {
         await offlineExecute(
           `INSERT INTO audit_logs (user_id, user_email, action, table_name, record_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
-            user?.id ?? null, user?.email ?? null, 'ATTENDANCE_STATUS_CHANGE', 'attendance', statusModal.record.id,
+            user?.id ?? null, user?.email ?? null, 'ATTENDANCE_STATUS_CHANGE', 'attendance', targetId,
+
             JSON.stringify({ old: oldStatus, new: statusModal.newStatus, reason: statusReason, date: statusModal.record.date }),
             nowISO,
           ]
