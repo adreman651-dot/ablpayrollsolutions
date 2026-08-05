@@ -502,6 +502,26 @@ export default function Attendance() {
         console.warn('Override cloud audit write failed:', auditCloudErr);
       }
 
+      // Status-change audit when an ABSENT day is verified as worked
+      if (wasAbsent && timeInISO) {
+        try {
+          await supabase.from('attendance_status_logs').insert({
+            attendance_id: targetId,
+            employee_id: editModal.employee_id,
+            employee_name: empLabel(editModal),
+            attendance_date: editForm.date,
+            old_status: 'Absent',
+            new_status: 'Present',
+            reason: editForm.reason.trim(),
+            modified_by: user?.id ?? null,
+            modified_by_email: user?.email ?? null,
+            modified_by_role: role,
+            platform,
+            device: navigator.userAgent.substring(0, 200),
+          });
+        } catch (e) { console.warn('status log write failed', e); }
+      }
+
       // Local audit log
       try {
         await offlineExecute(
@@ -511,10 +531,11 @@ export default function Attendance() {
             user?.email ?? null,
             'OVERRIDE',
             'attendance',
-            editModal.id,
+            targetId,
             JSON.stringify({ reason: editForm.reason, old: editModal, new: editForm }),
             new Date().toISOString(),
           ]
+
         );
       } catch (auditErr) {
         console.warn('Audit log write failed:', auditErr);
