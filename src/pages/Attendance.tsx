@@ -445,7 +445,23 @@ export default function Attendance() {
       };
       if (hoursWorked !== null) updates.total_hours = hoursWorked;
 
-      const { error } = await supabase.from('attendance').update(updates).eq('id', editModal.id);
+      const wasAbsent = isVirtualAbsent(editModal.id) || editModal.attendance_status === 'Absent';
+      if (wasAbsent && timeInISO) {
+        updates.attendance_status = 'Present';
+        updates.status_reason = editForm.reason.trim();
+        updates.status_modified_by = user?.id ?? null;
+        updates.status_modified_by_email = user?.email ?? null;
+        updates.status_modified_by_role = roles?.[0] || 'admin';
+        updates.status_modified_at = new Date().toISOString();
+      }
+
+      // Virtual (auto-generated ABSENT) rows are materialised before update,
+      // keyed on employee_id + date so no duplicate record can be created.
+      const targetId = isVirtualAbsent(editModal.id)
+        ? await materializeAbsent(editModal.employee_id, editModal.date)
+        : editModal.id;
+
+      const { error } = await supabase.from('attendance').update(updates).eq('id', targetId);
       if (error) throw error;
 
       // Cloud override audit trail
@@ -453,7 +469,8 @@ export default function Attendance() {
       const role = roles?.[0] || (isAdminOrHR ? 'admin' : 'user');
       try {
         await supabase.from('attendance_overrides').insert({
-          attendance_id: editModal.id,
+          attendance_id: targetId,
+
           employee_id: editModal.employee_id,
           employee_name: editModal.employees
             ? `${editModal.employees.first_name} ${editModal.employees.last_name}`
