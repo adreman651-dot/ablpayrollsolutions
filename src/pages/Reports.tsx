@@ -164,8 +164,22 @@ export default function Reports() {
           if (dateFrom) q = q.gte("date", dateFrom);
           if (dateTo) q = q.lte("date", dateTo);
           const { data: records } = await q;
+
+          // Include automatically generated ABSENT days for the period.
+          let virtuals: any[] = [];
+          if (dateFrom && dateTo) {
+            try {
+              virtuals = await buildAutoAbsentRows({
+                from: dateFrom,
+                to: dateTo,
+                existing: (records || []).map((r: any) => ({ employee_id: r.employee_id, date: r.date })),
+              });
+            } catch (e) { console.warn("Auto-absent report generation failed", e); }
+          }
+
+          const all = [...(records || []), ...virtuals].sort((a: any, b: any) => (a.date < b.date ? 1 : -1));
           setColumns(["Employee", "Code", "Date", "Attendance Status", "Reason", "Time In", "Time Out", "Hours", "Late Min", "Status"]);
-          setData((records || []).map(r => {
+          setData(all.map((r: any) => {
             let hours = "—";
             if (r.time_in && r.time_out) {
               const h = (new Date(r.time_out).getTime() - new Date(r.time_in).getTime()) / 3600000;
@@ -186,6 +200,7 @@ export default function Reports() {
           }));
           break;
         }
+
 
         case "leaves": {
           const { data: leavesData } = await supabase.from("leaves")
