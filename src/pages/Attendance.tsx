@@ -334,26 +334,52 @@ export default function Attendance() {
   };
   // ── End Manual Attendance ────────────────────────────────────────────
 
+  const currentRange = (): { from: string; to: string } => {
+    if (filterMode === "day") return { from: dateFilter, to: dateFilter };
+    if (filterMode === "month") {
+      const [y, m] = monthFilter.split("-").map(Number);
+      const endDate = `${monthFilter}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+      return { from: `${monthFilter}-01`, to: endDate };
+    }
+    return { from: dateFrom, to: dateTo };
+  };
+
   const fetchAttendance = async () => {
     setLoading(true);
+    const range = currentRange();
     let query = supabase.from("attendance").select("*, employees(first_name, last_name, employee_code, department)").order("date", { ascending: false }).order("time_in", { ascending: false });
-    if (filterMode === "day") query = query.eq("date", dateFilter);
-    else if (filterMode === "month") {
-      const [y, m] = monthFilter.split("-").map(Number);
-      const start = `${monthFilter}-01`;
-      const endDate = new Date(y, m, 0).toISOString().split("T")[0];
-      query = query.gte("date", start).lte("date", endDate);
-    } else query = query.gte("date", dateFrom).lte("date", dateTo);
+    query = query.gte("date", range.from).lte("date", range.to);
     if (employeeFilter !== "all") query = query.eq("employee_id", employeeFilter);
     const { data, error } = await query;
     if (error) toast.error(error.message);
     else {
       let rows = (data || []) as any[];
       if (departmentFilter !== "all") rows = rows.filter(r => r.employees?.department === departmentFilter);
-      setRecords(rows as any);
+
+      // Automatic ABSENT for past working days without any attendance record.
+      let virtuals: any[] = [];
+      try {
+        virtuals = await buildAutoAbsentRows({
+          from: range.from,
+          to: range.to,
+          existing: (data || []).map((r: any) => ({ employee_id: r.employee_id, date: r.date })),
+          employeeId: employeeFilter,
+          department: departmentFilter,
+        });
+      } catch (e) {
+        console.warn("Auto-absent generation failed", e);
+      }
+
+      const merged = [...rows, ...virtuals].sort((a, b) =>
+        a.date === b.date
+          ? String(a.employees?.last_name || "").localeCompare(String(b.employees?.last_name || ""))
+          : (a.date < b.date ? 1 : -1)
+      );
+      setRecords(merged as any);
     }
     setLoading(false);
   };
+
 
   const openEditModal = (r: AttendanceRecord) => {
     setEditModal(r);
