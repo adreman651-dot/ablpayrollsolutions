@@ -135,29 +135,44 @@ export default function Reports() {
 
         case "absences": {
           const { data: emps } = await supabase.from("employees")
-            .select("id, first_name, last_name, employee_code").eq("employment_status", "active");
+            .select("id, first_name, last_name, employee_code, hire_date, employment_status").eq("employment_status", "active");
           if (!dateFrom || !dateTo) { toast.error("Please select date range for absences report"); break; }
-          const start = new Date(dateFrom), end = new Date(dateTo);
-          const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+
+          const { data: att } = await supabase.from("attendance")
+            .select("employee_id, date, time_in, time_out, attendance_status, status")
+            .gte("date", dateFrom).lte("date", dateTo);
+
+          const virtuals = await buildAutoAbsentRows({
+            from: dateFrom,
+            to: dateTo,
+            existing: (att || []).map((r: any) => ({ employee_id: r.employee_id, date: r.date })),
+            employees: emps || [],
+          });
+
           const rows: any[] = [];
           for (const emp of (emps || [])) {
-            const { data: att } = await supabase.from("attendance")
-              .select("status").eq("employee_id", emp.id).gte("date", dateFrom).lte("date", dateTo);
-            const present = (att || []).filter(a => a.status === "present" || a.status === "late").length;
-            const absent = Math.max(0, totalDays - present);
+            const mine = (att || []).filter((a: any) => a.employee_id === emp.id);
+            const present = mine.filter((a: any) =>
+              !!a.time_in && !!a.time_out && (!a.attendance_status || a.attendance_status === "Present")
+            ).length;
+            const recordedAbsent = mine.filter((a: any) => a.attendance_status === "Absent").length;
+            const autoAbsent = virtuals.filter(v => v.employee_id === emp.id).length;
+            const absent = recordedAbsent + autoAbsent;
+            const scheduled = present + absent;
             if (absent > 0) rows.push({
               Employee: `${emp.last_name}, ${emp.first_name}`,
               Code: emp.employee_code,
               "Period": `${dateFrom} to ${dateTo}`,
               "Days Present": present,
               "Days Absent": absent,
-              "Attendance Rate": `${Math.round((present / totalDays) * 100)}%`,
+              "Attendance Rate": scheduled > 0 ? `${Math.round((present / scheduled) * 100)}%` : "—",
             });
           }
           setColumns(["Employee", "Code", "Period", "Days Present", "Days Absent", "Attendance Rate"]);
           setData(rows);
           break;
         }
+
 
         case "attendance_summary": {
           let q = supabase.from("attendance")
