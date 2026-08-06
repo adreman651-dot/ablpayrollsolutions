@@ -672,6 +672,38 @@ export default function Settings() {
 
         {/* ─── Maintenance ───────────────────────────────────────────── */}
         <TabsContent value="maintenance" className="mt-0">
+          {/* Attendance Settings */}
+          <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-display font-semibold">Attendance Settings</h3>
+              <p className="text-sm text-muted-foreground mt-1">Configure the automatic attendance evaluation rules.</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4 p-4 border rounded-lg bg-muted/30">
+                <div className="flex-1">
+                  <Label htmlFor="cutoff_time" className="text-sm font-medium">Time-In Cutoff Time</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Employees with no Time In by this time are automatically marked <strong>ABSENT</strong> for the day.
+                    Approved statuses (Day Off, Rest Day, Holiday, Leave, Official Business, Training) always take priority.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="cutoff_time"
+                    type="time"
+                    className="w-36"
+                    value={cutoffTime}
+                    onChange={(e) => setCutoffTime(e.target.value)}
+                  />
+                  <Button onClick={saveCutoffTime} disabled={savingCutoff} className="gap-2">
+                    <Save className="w-4 h-4" />
+                    {savingCutoff ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
             <div className="p-4 border-b border-border">
               <h3 className="font-display font-semibold">Database Maintenance</h3>
