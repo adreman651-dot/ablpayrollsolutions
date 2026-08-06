@@ -189,6 +189,41 @@ export default function Settings() {
 
   useEffect(() => { fetchData(); }, []);
 
+  // Attendance cutoff time
+  const [cutoffTime, setCutoffTime] = useState<string>(DEFAULT_CUTOFF_TIME);
+  const [savingCutoff, setSavingCutoff] = useState(false);
+
+  useEffect(() => {
+    const s = settings.find(x => x.key === "cutoff_time");
+    if (s?.value) setCutoffTime(normalizeCutoff(s.value));
+  }, [settings]);
+
+  const saveCutoffTime = async () => {
+    const value = normalizeCutoff(cutoffTime);
+    setSavingCutoff(true);
+    try {
+      const existing = settings.find(s => s.key === "cutoff_time");
+      if (existing) {
+        const { error } = await supabase.from("system_settings").update({ value }).eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("system_settings").insert([{
+          key: "cutoff_time",
+          value,
+          description: "Time-In cutoff. Employees without a Time In by this time are automatically marked ABSENT.",
+        }]);
+        if (error) throw error;
+      }
+      try { localStorage.setItem("abl_cutoff_time", value); } catch { /* ignore */ }
+      toast.success(`Time-In cutoff set to ${value}`);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to save cutoff time");
+    } finally {
+      setSavingCutoff(false);
+    }
+  };
+
   const updateSetting = async (id: string, value: string) => {
     const { error } = await supabase.from("system_settings").update({ value }).eq("id", id);
     if (error) toast.error(error.message);
