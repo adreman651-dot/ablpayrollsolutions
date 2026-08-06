@@ -77,6 +77,56 @@ const weekdayOf = (dateStr: string) => {
   return new Date(y, m - 1, d).getDay(); // 0=Sun .. 6=Sat
 };
 
+const CUTOFF_CACHE_KEY = "abl_cutoff_time";
+export const DEFAULT_CUTOFF_TIME = "10:00";
+
+/** Normalise "10:00", "10:00:00", "10:00 AM" -> "HH:MM" (24h). */
+export function normalizeCutoff(raw: string | null | undefined): string {
+  if (!raw) return DEFAULT_CUTOFF_TIME;
+  const v = String(raw).replace(/["[\]]/g, "").trim();
+  const ampm = v.match(/^(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]\.?$/);
+  if (ampm) {
+    let h = Number(ampm[1]) % 12;
+    if (ampm[3].toLowerCase() === "p") h += 12;
+    return `${pad(h)}:${ampm[2]}`;
+  }
+  const hm = v.match(/^(\d{1,2}):(\d{2})/);
+  if (hm) return `${pad(Number(hm[1]))}:${hm[2]}`;
+  return DEFAULT_CUTOFF_TIME;
+}
+
+/** Configurable Time-In cutoff (system_settings.cutoff_time). Cached for offline use. */
+export async function getCutoffTime(): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "cutoff_time")
+      .maybeSingle();
+    if (data?.value) {
+      const v = normalizeCutoff(data.value);
+      try { localStorage.setItem(CUTOFF_CACHE_KEY, v); } catch { /* ignore */ }
+      return v;
+    }
+  } catch {
+    /* offline — fall back to cached value */
+  }
+  try {
+    const cached = localStorage.getItem(CUTOFF_CACHE_KEY);
+    if (cached) return normalizeCutoff(cached);
+  } catch { /* ignore */ }
+  return DEFAULT_CUTOFF_TIME;
+}
+
+/** Local device time as HH:MM. */
+export const localNowHHMM = (): string => {
+  const d = new Date();
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+/** True when the device local clock has reached/passed the configured cutoff. */
+export const cutoffReached = (cutoff: string): boolean => localNowHHMM() >= normalizeCutoff(cutoff);
+
 /** Working days configured in system_settings (`work_days`), default Mon–Sat. */
 export async function getWorkDays(): Promise<number[]> {
   try {
