@@ -167,8 +167,11 @@ export async function buildAutoAbsentRows(opts: {
   if (!from || !to || from > to) return [];
 
   const today = localToday();
-  // Never generate for today or future dates.
-  const effectiveTo = to >= today ? addDays(today, -1) : to;
+  // Today counts only once the configured Time-In cutoff has been reached.
+  // Future dates are never evaluated.
+  const cutoff = await getCutoffTime();
+  const includeToday = cutoffReached(cutoff);
+  const effectiveTo = to >= today ? (includeToday ? today : addDays(today, -1)) : to;
   if (from > effectiveTo) return [];
 
   let employees = opts.employees;
