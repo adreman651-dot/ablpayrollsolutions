@@ -18,7 +18,7 @@ import { recalculatePayrollForDate } from "@/lib/payroll-recalc";
 import { getSelfieUrl } from "@/lib/selfieUrl";
 import { Capacitor } from "@capacitor/core";
 import { ATTENDANCE_STATUSES, getStatusMeta, type AttendanceStatus } from "@/lib/attendanceStatus";
-import { buildAutoAbsentRows, isVirtualAbsent, materializeAbsent } from "@/lib/autoAbsent";
+import { buildAutoAbsentRows, isVirtualAbsent, materializeAbsent, getCutoffTime, cutoffReached } from "@/lib/autoAbsent";
 
 
 interface AttendanceRecord {
