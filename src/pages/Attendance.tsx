@@ -18,7 +18,7 @@ import { recalculatePayrollForDate } from "@/lib/payroll-recalc";
 import { getSelfieUrl } from "@/lib/selfieUrl";
 import { Capacitor } from "@capacitor/core";
 import { ATTENDANCE_STATUSES, getStatusMeta, type AttendanceStatus } from "@/lib/attendanceStatus";
-import { buildAutoAbsentRows, isVirtualAbsent, materializeAbsent } from "@/lib/autoAbsent";
+import { buildAutoAbsentRows, isVirtualAbsent, materializeAbsent, getCutoffTime, cutoffReached } from "@/lib/autoAbsent";
 
 
 interface AttendanceRecord {
@@ -558,6 +558,24 @@ export default function Attendance() {
   useEffect(() => {
     supabase.from("employees").select("id, first_name, last_name, employee_code, department").order("last_name").then(({ data }) => setEmployees(data || []));
   }, []);
+
+  // Re-evaluate automatic ABSENT the moment the configured cutoff time is reached
+  // while the app stays open (uses device local time — works offline).
+  useEffect(() => {
+    let reached: boolean | null = null;
+    let cancelled = false;
+    const tick = async () => {
+      const cutoff = await getCutoffTime();
+      const now = cutoffReached(cutoff);
+      if (cancelled) return;
+      if (reached !== null && now && !reached) fetchAttendance();
+      reached = now;
+    };
+    tick();
+    const id = setInterval(tick, 60 * 1000);
+    return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterMode, dateFilter, monthFilter, dateFrom, dateTo, employeeFilter, departmentFilter]);
 
   const empLabel = (r: AttendanceRecord) =>
     r.employees ? `${r.employees.first_name} ${r.employees.last_name}` : (r.employee_name || "—");

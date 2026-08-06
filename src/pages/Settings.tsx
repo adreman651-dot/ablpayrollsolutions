@@ -15,6 +15,7 @@ import { syncAllData } from "@/lib/syncEngine";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
 import { Progress } from "@/components/ui/progress";
 import { SystemLogsTab } from "@/components/settings/SystemLogsTab";
+import { DEFAULT_CUTOFF_TIME, normalizeCutoff } from "@/lib/autoAbsent";
 
 
 
@@ -188,6 +189,41 @@ export default function Settings() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Attendance cutoff time
+  const [cutoffTime, setCutoffTime] = useState<string>(DEFAULT_CUTOFF_TIME);
+  const [savingCutoff, setSavingCutoff] = useState(false);
+
+  useEffect(() => {
+    const s = settings.find(x => x.key === "cutoff_time");
+    if (s?.value) setCutoffTime(normalizeCutoff(s.value));
+  }, [settings]);
+
+  const saveCutoffTime = async () => {
+    const value = normalizeCutoff(cutoffTime);
+    setSavingCutoff(true);
+    try {
+      const existing = settings.find(s => s.key === "cutoff_time");
+      if (existing) {
+        const { error } = await supabase.from("system_settings").update({ value }).eq("id", existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("system_settings").insert([{
+          key: "cutoff_time",
+          value,
+          description: "Time-In cutoff. Employees without a Time In by this time are automatically marked ABSENT.",
+        }]);
+        if (error) throw error;
+      }
+      try { localStorage.setItem("abl_cutoff_time", value); } catch { /* ignore */ }
+      toast.success(`Time-In cutoff set to ${value}`);
+      fetchData();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to save cutoff time");
+    } finally {
+      setSavingCutoff(false);
+    }
+  };
 
   const updateSetting = async (id: string, value: string) => {
     const { error } = await supabase.from("system_settings").update({ value }).eq("id", id);
@@ -672,6 +708,38 @@ export default function Settings() {
 
         {/* ─── Maintenance ───────────────────────────────────────────── */}
         <TabsContent value="maintenance" className="mt-0">
+          {/* Attendance Settings */}
+          <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+            <div className="p-4 border-b border-border">
+              <h3 className="font-display font-semibold">Attendance Settings</h3>
+              <p className="text-sm text-muted-foreground mt-1">Configure the automatic attendance evaluation rules.</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4 p-4 border rounded-lg bg-muted/30">
+                <div className="flex-1">
+                  <Label htmlFor="cutoff_time" className="text-sm font-medium">Time-In Cutoff Time</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Employees with no Time In by this time are automatically marked <strong>ABSENT</strong> for the day.
+                    Approved statuses (Day Off, Rest Day, Holiday, Leave, Official Business, Training) always take priority.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="cutoff_time"
+                    type="time"
+                    className="w-36"
+                    value={cutoffTime}
+                    onChange={(e) => setCutoffTime(e.target.value)}
+                  />
+                  <Button onClick={saveCutoffTime} disabled={savingCutoff} className="gap-2">
+                    <Save className="w-4 h-4" />
+                    {savingCutoff ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-card border border-border rounded-xl overflow-hidden mb-6">
             <div className="p-4 border-b border-border">
               <h3 className="font-display font-semibold">Database Maintenance</h3>
