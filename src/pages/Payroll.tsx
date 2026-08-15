@@ -312,21 +312,98 @@ export default function Payroll() {
           total_deductions: totalDeductions,
           net_pay: +netPay.toFixed(2),
         });
+
+        if (overrideInfo) {
+          const prev = prevMap[emp.id];
+          const prevDays = prev && dailyRate > 0 ? +((prev.gross_pay || 0) / dailyRate).toFixed(2) : null;
+          auditRows.push({
+            payroll_run_id: run.id,
+            period_start: run.period_start,
+            period_end: run.period_end,
+            employee_id: emp.id,
+            employee_code: emp.employee_code,
+            employee_name: `${(emp as any).last_name}, ${(emp as any).first_name}`,
+            original_gross: prev?.gross_pay ?? null,
+            new_gross: grossPay,
+            original_days_worked: prevDays,
+            new_days_worked: effectiveDays,
+            original_deductions: prev?.total_deductions ?? null,
+            new_deductions: totalDeductions,
+            original_net_pay: prev?.net_pay ?? null,
+            new_net_pay: +netPay.toFixed(2),
+            action: "reprocess_override",
+            reason: overrideInfo.reason,
+            override_by: user?.id ?? null,
+            override_by_email: user?.email ?? null,
+            override_by_role: overrideRole,
+          });
+        }
       }
 
       await supabase.from("payroll_items").delete().eq("payroll_run_id", run.id);
       const { error: insertErr } = await supabase.from("payroll_items").insert(items);
       if (insertErr) throw insertErr;
 
+      // The payroll period stays COMPLETED — no duplicate transaction is created.
       await supabase.from("payroll_runs").update({ status: "completed" }).eq("id", run.id);
-      toast.success(`Payroll processed for ${items.length} employees`);
+
+      if (auditRows.length) {
+        const { error: auditErr } = await supabase.from("payroll_override_logs").insert(auditRows);
+        if (auditErr) toast.error(`Payroll updated but audit log failed: ${auditErr.message}`);
+      }
+
+      toast.success(overrideInfo
+        ? `Payroll override applied for ${items.length} employees (audit logged)`
+        : `Payroll processed for ${items.length} employees`);
       fetchRuns();
+      if (viewingRun?.id === run.id) await viewRun(run);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setProcessing(false);
     }
   };
+
+  // ─── Delete payroll transaction ────────────────────────────────────────────
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.status === "completed" && !canDeleteCompleted) {
+      toast.error("Only an Administrator or authorized Payroll Manager may delete a processed payroll.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      // Detach loan payments (keep loan history intact) before removing the run.
+      await supabase.from("loan_payments").update({ payroll_run_id: null }).eq("payroll_run_id", deleteTarget.id);
+      const { error: itemErr } = await supabase.from("payroll_items").delete().eq("payroll_run_id", deleteTarget.id);
+      if (itemErr) throw itemErr;
+      const { error: runErr } = await supabase.from("payroll_runs").delete().eq("id", deleteTarget.id);
+      if (runErr) throw runErr;
+
+      if (viewingRun?.id === deleteTarget.id) { setViewingRun(null); setViewItems([]); }
+      toast.success("Payroll transaction deleted");
+      setDeleteTarget(null);
+      fetchRuns();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ─── Authorized override submit ────────────────────────────────────────────
+  const submitOverride = async () => {
+    if (!overrideCtx) return;
+    if (!canOverride) { toast.error("You are not authorized to override a completed payroll."); return; }
+    const reason = overrideReason.trim();
+    if (!reason) { toast.error("Reason for override is required."); return; }
+    const ctx = overrideCtx;
+    setOverrideCtx(null);
+    setOverrideReason("");
+    if (ctx.action === "reprocess") await executeProcess(ctx.run, { reason });
+    else await saveOverrides(reason);
+  };
+
 
   const viewRun = async (run: PayrollRun) => {
     const { data, error } = await supabase.from("payroll_items")
