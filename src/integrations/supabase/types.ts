@@ -34,8 +34,12 @@ export type Database = {
           latitude: number | null
           latitude_in: number | null
           latitude_out: number | null
+          location_captured_at_in: string | null
+          location_captured_at_out: string | null
           location_label_in: string | null
           location_label_out: string | null
+          location_source_in: string | null
+          location_source_out: string | null
           locked: boolean
           longitude: number | null
           longitude_in: number | null
@@ -76,8 +80,12 @@ export type Database = {
           latitude?: number | null
           latitude_in?: number | null
           latitude_out?: number | null
+          location_captured_at_in?: string | null
+          location_captured_at_out?: string | null
           location_label_in?: string | null
           location_label_out?: string | null
+          location_source_in?: string | null
+          location_source_out?: string | null
           locked?: boolean
           longitude?: number | null
           longitude_in?: number | null
@@ -118,8 +126,12 @@ export type Database = {
           latitude?: number | null
           latitude_in?: number | null
           latitude_out?: number | null
+          location_captured_at_in?: string | null
+          location_captured_at_out?: string | null
           location_label_in?: string | null
           location_label_out?: string | null
+          location_source_in?: string | null
+          location_source_out?: string | null
           locked?: boolean
           longitude?: number | null
           longitude_in?: number | null
@@ -665,6 +677,78 @@ export type Database = {
           },
         ]
       }
+      payroll_override_logs: {
+        Row: {
+          action: string
+          created_at: string
+          employee_code: string | null
+          employee_id: string | null
+          employee_name: string | null
+          id: string
+          new_days_worked: number | null
+          new_deductions: number | null
+          new_gross: number | null
+          new_net_pay: number | null
+          original_days_worked: number | null
+          original_deductions: number | null
+          original_gross: number | null
+          original_net_pay: number | null
+          override_by: string | null
+          override_by_email: string | null
+          override_by_role: string | null
+          payroll_run_id: string | null
+          period_end: string | null
+          period_start: string | null
+          reason: string
+        }
+        Insert: {
+          action?: string
+          created_at?: string
+          employee_code?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string
+          new_days_worked?: number | null
+          new_deductions?: number | null
+          new_gross?: number | null
+          new_net_pay?: number | null
+          original_days_worked?: number | null
+          original_deductions?: number | null
+          original_gross?: number | null
+          original_net_pay?: number | null
+          override_by?: string | null
+          override_by_email?: string | null
+          override_by_role?: string | null
+          payroll_run_id?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          reason: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          employee_code?: string | null
+          employee_id?: string | null
+          employee_name?: string | null
+          id?: string
+          new_days_worked?: number | null
+          new_deductions?: number | null
+          new_gross?: number | null
+          new_net_pay?: number | null
+          original_days_worked?: number | null
+          original_deductions?: number | null
+          original_gross?: number | null
+          original_net_pay?: number | null
+          override_by?: string | null
+          override_by_email?: string | null
+          override_by_role?: string | null
+          payroll_run_id?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          reason?: string
+        }
+        Relationships: []
+      }
       payroll_runs: {
         Row: {
           created_at: string
@@ -843,6 +927,8 @@ export type Database = {
           _face_verified?: boolean
           _gps_accuracy?: number
           _latitude?: number
+          _location_captured_at?: string
+          _location_source?: string
           _longitude?: number
           _mode: string
           _photo_url?: string
