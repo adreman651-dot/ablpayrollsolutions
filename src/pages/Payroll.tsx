@@ -66,7 +66,10 @@ interface ManualOverride {
 }
 
 export default function Payroll() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const canOverride = hasRole("admin") || hasRole("hr") || hasRole("payroll_officer");
+  const canDeleteCompleted = hasRole("admin") || hasRole("payroll_officer");
+  const overrideRole = hasRole("admin") ? "admin" : hasRole("payroll_officer") ? "payroll_officer" : hasRole("hr") ? "hr" : "employee";
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -79,7 +82,14 @@ export default function Payroll() {
   const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
   const [attendanceMap, setAttendanceMap] = useState<Record<string, any>>({});
   const [savingOverrides, setSavingOverrides] = useState(false);
-  
+
+  // Locking / override / delete state
+  const [lockedRun, setLockedRun] = useState<PayrollRun | null>(null);
+  const [overrideCtx, setOverrideCtx] = useState<{ run: PayrollRun; action: "reprocess" | "save" } | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<PayrollRun | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Breakdown Modal
   const [breakdownEmployee, setBreakdownEmployee] = useState<any>(null);
 
