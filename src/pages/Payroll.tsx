@@ -198,16 +198,36 @@ export default function Payroll() {
     return computeDailyRate(basicSalary);
   }
 
-  const processRun = async (run: PayrollRun & { cutoff_type?: string }) => {
+  // Entry point from the Process button — blocks completed (locked) periods.
+  const processRun = (run: PayrollRun & { cutoff_type?: string }) => {
     if (run.status === "completed") {
-      if (!confirm("This run is already completed. Re-process and overwrite?")) return;
+      setLockedRun(run);
+      return;
     }
+    executeProcess(run);
+  };
+
+  // Actual payroll computation. When `overrideInfo` is provided the run is a
+  // authorized reprocess of an already-completed (locked) period and every
+  // affected employee is written to the payroll override audit log.
+  const executeProcess = async (
+    run: PayrollRun & { cutoff_type?: string },
+    overrideInfo?: { reason: string }
+  ) => {
     setProcessing(true);
     try {
       const { data: employees, error: empErr } = await supabase.from("employees")
-        .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution, sss_number, philhealth_number, pagibig_number").eq("employment_status", "active");
+        .select("id, first_name, last_name, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution, sss_number, philhealth_number, pagibig_number").eq("employment_status", "active");
       if (empErr) throw empErr;
       if (!employees?.length) { toast.error("No active employees"); return; }
+
+      // Snapshot existing payroll items so an override can be audited (original vs new).
+      const { data: previousItems } = await supabase.from("payroll_items")
+        .select("*").eq("payroll_run_id", run.id);
+      const prevMap: Record<string, any> = {};
+      (previousItems || []).forEach((p: any) => { prevMap[p.employee_id] = p; });
+      const auditRows: any[] = [];
+
 
       const start = new Date(run.period_start), end = new Date(run.period_end);
       const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
