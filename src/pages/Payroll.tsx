@@ -3,11 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle, MapPin, AlertTriangle } from "lucide-react";
+import { Plus, Play, Eye, FileSpreadsheet, FileText, Printer, AlertCircle, MapPin, AlertTriangle, Trash2, Lock } from "lucide-react";
 import { toast } from "sonner";
 import {
   formatCurrency, computeWithholdingTax, computeDailyRate, WORKING_DAYS_PER_MONTH,
@@ -65,7 +66,10 @@ interface ManualOverride {
 }
 
 export default function Payroll() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
+  const canOverride = hasRole("admin") || hasRole("hr") || hasRole("payroll_officer");
+  const canDeleteCompleted = hasRole("admin") || hasRole("payroll_officer");
+  const overrideRole = hasRole("admin") ? "admin" : hasRole("payroll_officer") ? "payroll_officer" : hasRole("hr") ? "hr" : "employee";
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,7 +82,14 @@ export default function Payroll() {
   const [overrides, setOverrides] = useState<Record<string, ManualOverride>>({});
   const [attendanceMap, setAttendanceMap] = useState<Record<string, any>>({});
   const [savingOverrides, setSavingOverrides] = useState(false);
-  
+
+  // Locking / override / delete state
+  const [lockedRun, setLockedRun] = useState<PayrollRun | null>(null);
+  const [overrideCtx, setOverrideCtx] = useState<{ run: PayrollRun; action: "reprocess" | "save" } | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<PayrollRun | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Breakdown Modal
   const [breakdownEmployee, setBreakdownEmployee] = useState<any>(null);
 
@@ -187,16 +198,36 @@ export default function Payroll() {
     return computeDailyRate(basicSalary);
   }
 
-  const processRun = async (run: PayrollRun & { cutoff_type?: string }) => {
+  // Entry point from the Process button — blocks completed (locked) periods.
+  const processRun = (run: PayrollRun & { cutoff_type?: string }) => {
     if (run.status === "completed") {
-      if (!confirm("This run is already completed. Re-process and overwrite?")) return;
+      setLockedRun(run);
+      return;
     }
+    executeProcess(run);
+  };
+
+  // Actual payroll computation. When `overrideInfo` is provided the run is a
+  // authorized reprocess of an already-completed (locked) period and every
+  // affected employee is written to the payroll override audit log.
+  const executeProcess = async (
+    run: PayrollRun & { cutoff_type?: string },
+    overrideInfo?: { reason: string }
+  ) => {
     setProcessing(true);
     try {
       const { data: employees, error: empErr } = await supabase.from("employees")
-        .select("id, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution, sss_number, philhealth_number, pagibig_number").eq("employment_status", "active");
+        .select("id, first_name, last_name, basic_salary, employee_code, payroll_type, sss_schedule, phic_schedule, hdmf_schedule, sss_contribution, phic_contribution, hdmf_contribution, sss_number, philhealth_number, pagibig_number").eq("employment_status", "active");
       if (empErr) throw empErr;
       if (!employees?.length) { toast.error("No active employees"); return; }
+
+      // Snapshot existing payroll items so an override can be audited (original vs new).
+      const { data: previousItems } = await supabase.from("payroll_items")
+        .select("*").eq("payroll_run_id", run.id);
+      const prevMap: Record<string, any> = {};
+      (previousItems || []).forEach((p: any) => { prevMap[p.employee_id] = p; });
+      const auditRows: any[] = [];
+
 
       const start = new Date(run.period_start), end = new Date(run.period_end);
       const totalDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
@@ -281,21 +312,98 @@ export default function Payroll() {
           total_deductions: totalDeductions,
           net_pay: +netPay.toFixed(2),
         });
+
+        if (overrideInfo) {
+          const prev = prevMap[emp.id];
+          const prevDays = prev && dailyRate > 0 ? +((prev.gross_pay || 0) / dailyRate).toFixed(2) : null;
+          auditRows.push({
+            payroll_run_id: run.id,
+            period_start: run.period_start,
+            period_end: run.period_end,
+            employee_id: emp.id,
+            employee_code: emp.employee_code,
+            employee_name: `${(emp as any).last_name}, ${(emp as any).first_name}`,
+            original_gross: prev?.gross_pay ?? null,
+            new_gross: grossPay,
+            original_days_worked: prevDays,
+            new_days_worked: effectiveDays,
+            original_deductions: prev?.total_deductions ?? null,
+            new_deductions: totalDeductions,
+            original_net_pay: prev?.net_pay ?? null,
+            new_net_pay: +netPay.toFixed(2),
+            action: "reprocess_override",
+            reason: overrideInfo.reason,
+            override_by: user?.id ?? null,
+            override_by_email: user?.email ?? null,
+            override_by_role: overrideRole,
+          });
+        }
       }
 
       await supabase.from("payroll_items").delete().eq("payroll_run_id", run.id);
       const { error: insertErr } = await supabase.from("payroll_items").insert(items);
       if (insertErr) throw insertErr;
 
+      // The payroll period stays COMPLETED — no duplicate transaction is created.
       await supabase.from("payroll_runs").update({ status: "completed" }).eq("id", run.id);
-      toast.success(`Payroll processed for ${items.length} employees`);
+
+      if (auditRows.length) {
+        const { error: auditErr } = await supabase.from("payroll_override_logs").insert(auditRows);
+        if (auditErr) toast.error(`Payroll updated but audit log failed: ${auditErr.message}`);
+      }
+
+      toast.success(overrideInfo
+        ? `Payroll override applied for ${items.length} employees (audit logged)`
+        : `Payroll processed for ${items.length} employees`);
       fetchRuns();
+      if (viewingRun?.id === run.id) await viewRun(run);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setProcessing(false);
     }
   };
+
+  // ─── Delete payroll transaction ────────────────────────────────────────────
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.status === "completed" && !canDeleteCompleted) {
+      toast.error("Only an Administrator or authorized Payroll Manager may delete a processed payroll.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      // Detach loan payments (keep loan history intact) before removing the run.
+      await supabase.from("loan_payments").update({ payroll_run_id: null }).eq("payroll_run_id", deleteTarget.id);
+      const { error: itemErr } = await supabase.from("payroll_items").delete().eq("payroll_run_id", deleteTarget.id);
+      if (itemErr) throw itemErr;
+      const { error: runErr } = await supabase.from("payroll_runs").delete().eq("id", deleteTarget.id);
+      if (runErr) throw runErr;
+
+      if (viewingRun?.id === deleteTarget.id) { setViewingRun(null); setViewItems([]); }
+      toast.success("Payroll transaction deleted");
+      setDeleteTarget(null);
+      fetchRuns();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // ─── Authorized override submit ────────────────────────────────────────────
+  const submitOverride = async () => {
+    if (!overrideCtx) return;
+    if (!canOverride) { toast.error("You are not authorized to override a completed payroll."); return; }
+    const reason = overrideReason.trim();
+    if (!reason) { toast.error("Reason for override is required."); return; }
+    const ctx = overrideCtx;
+    setOverrideCtx(null);
+    setOverrideReason("");
+    if (ctx.action === "reprocess") await executeProcess(ctx.run, { reason });
+    else await saveOverrides(reason);
+  };
+
 
   const viewRun = async (run: PayrollRun) => {
     const { data, error } = await supabase.from("payroll_items")
