@@ -877,13 +877,107 @@ export default function Payroll() {
             </Table>
           </div>
 
-          <div className="p-4 border-t border-border flex justify-end">
-            <Button onClick={saveOverrides} disabled={savingOverrides}>
-              {savingOverrides ? "Saving..." : "Save Deductions & Recalculate"}
+          <div className="p-4 border-t border-border flex items-center justify-between gap-2 flex-wrap">
+            {viewingRun.status === "completed" && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Lock className="w-3 h-3" /> This payroll period is locked. Changes require an authorized manual override.
+              </p>
+            )}
+            <Button className="ml-auto" onClick={requestSaveOverrides} disabled={savingOverrides}>
+              {savingOverrides ? "Saving..." : viewingRun.status === "completed" ? "Manual Override & Recalculate" : "Save Deductions & Recalculate"}
             </Button>
           </div>
         </div>
       )}
+
+      {/* Payroll Already Processed (locked period) */}
+      <Dialog open={!!lockedRun} onOpenChange={open => !open && setLockedRun(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Lock className="w-4 h-4" />Payroll Already Processed</DialogTitle>
+            <DialogDescription>
+              This payroll period has already been processed and cannot be processed again.
+              {canOverride
+                ? " Please use the authorized manual override/reprocess workflow if changes are required."
+                : " Contact an Administrator, HR, or authorized Payroll Manager if changes are required."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLockedRun(null)}>Cancel</Button>
+            {canOverride && (
+              <Button onClick={() => {
+                const run = lockedRun!;
+                setLockedRun(null);
+                setOverrideReason("");
+                setOverrideCtx({ run, action: "reprocess" });
+              }}>Continue Override</Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual override — reason required */}
+      <Dialog open={!!overrideCtx} onOpenChange={open => { if (!open) { setOverrideCtx(null); setOverrideReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Payroll Period Locked</DialogTitle>
+            <DialogDescription>
+              This payroll period has already been processed. Manual override is required to make changes. Continue with Override?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Reason for Override <span className="text-destructive">*</span></Label>
+            <Textarea
+              value={overrideReason}
+              onChange={e => setOverrideReason(e.target.value)}
+              placeholder="e.g. Employee attendance was corrected after payroll processing."
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground">
+              Overriding as {user?.email} ({overrideRole}). This action is recorded in the payroll audit log.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setOverrideCtx(null); setOverrideReason(""); }}>Cancel</Button>
+            <Button onClick={submitOverride} disabled={!overrideReason.trim() || processing || savingOverrides}>Continue Override</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete payroll transaction */}
+      <Dialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Delete this payroll transaction?</DialogTitle>
+            <DialogDescription>
+              This action will permanently remove this payroll record and its associated payroll transaction data. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteTarget?.status === "completed" && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm flex gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 text-destructive shrink-0" />
+              <span>
+                This payroll has already been processed. Deleting it will permanently remove the processed payroll transaction.
+                This action should only be performed by an authorized administrator.
+              </span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Employees, attendance, leaves, loans, selfies and other payroll periods are not affected.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleting || (deleteTarget?.status === "completed" && !canDeleteCompleted)}
+            >
+              {deleting ? "Deleting..." : "Delete Payroll"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       
       {/* Attendance Location Summary Modal */}
       <Dialog open={!!breakdownEmployee} onOpenChange={open => !open && setBreakdownEmployee(null)}>
