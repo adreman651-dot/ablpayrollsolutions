@@ -706,6 +706,8 @@ export default function TimeIn() {
         _face_match_percentage: faceMatchPct,
         _face_detection_enabled: empFaceEnabled,
         _gps_accuracy: preciseLocation.accuracy,
+        _location_captured_at: new Date(preciseLocation.timestamp || Date.now()).toISOString(),
+        _location_source: Capacitor.isNativePlatform() ? "Android Fused Location (GPS)" : "Browser Geolocation",
       } as any);
 
       if (error) throw error;
