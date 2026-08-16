@@ -639,12 +639,18 @@ export default function TimeIn() {
     let photoUrl: string | null = null;
     if (selfieBase64) photoUrl = await uploadSelfie(selfieBase64, employeeId);
 
+    // Reverse geocoding must never block or invalidate the punch: coordinates are
+    // already captured. If it fails/times out we save "Address unavailable".
     let preciseAddress: string | null = null;
     try {
-      preciseAddress = await reverseGeocode(preciseLocation.latitude, preciseLocation.longitude, preciseLocation.accuracy);
+      preciseAddress = await Promise.race([
+        reverseGeocode(preciseLocation.latitude, preciseLocation.longitude, preciseLocation.accuracy),
+        new Promise<null>(res => setTimeout(() => res(null), 6000)),
+      ]);
     } catch {
-      preciseAddress = address || null;
+      preciseAddress = null;
     }
+    if (!preciseAddress) preciseAddress = "Address unavailable";
 
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const deviceType = Capacitor.isNativePlatform() ? "Android" : (isMobile ? "Mobile" : "Desktop");
@@ -700,6 +706,8 @@ export default function TimeIn() {
         _face_match_percentage: faceMatchPct,
         _face_detection_enabled: empFaceEnabled,
         _gps_accuracy: preciseLocation.accuracy,
+        _location_captured_at: new Date(preciseLocation.timestamp || Date.now()).toISOString(),
+        _location_source: Capacitor.isNativePlatform() ? "Android Fused Location (GPS)" : "Browser Geolocation",
       } as any);
 
       if (error) throw error;

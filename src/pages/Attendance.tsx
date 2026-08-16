@@ -37,6 +37,10 @@ interface AttendanceRecord {
   location_label_out: string | null;
   gps_accuracy_in: number | null;
   gps_accuracy_out: number | null;
+  location_captured_at_in?: string | null;
+  location_captured_at_out?: string | null;
+  location_source_in?: string | null;
+  location_source_out?: string | null;
   status: string | null;
   attendance_status: string | null;
   status_reason: string | null;
@@ -782,6 +786,14 @@ export default function Attendance() {
                           {r.gps_accuracy_in != null && ` · ±${Math.round(r.gps_accuracy_in)}m`}
                         </div>
                       )}
+                      {r.location_label_in && (
+                        <div className="text-[10px] text-muted-foreground max-w-[220px] truncate" title={r.location_label_in}>{r.location_label_in}</div>
+                      )}
+                      {r.location_captured_at_in && (
+                        <div className="text-[10px] text-muted-foreground/70">
+                          Loc @ {new Date(r.location_captured_at_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       {r.time_out ? new Date(r.time_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
@@ -792,7 +804,16 @@ export default function Attendance() {
                           {r.gps_accuracy_out != null && ` · ±${Math.round(r.gps_accuracy_out)}m`}
                         </div>
                       )}
+                      {r.location_label_out && (
+                        <div className="text-[10px] text-muted-foreground max-w-[220px] truncate" title={r.location_label_out}>{r.location_label_out}</div>
+                      )}
+                      {r.location_captured_at_out && (
+                        <div className="text-[10px] text-muted-foreground/70">
+                          Loc @ {new Date(r.location_captured_at_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </div>
+                      )}
                     </TableCell>
+
                     <TableCell className="text-center">
                       <SelfieThumb
                         src={r.photo_in_url || (r as any).selfie_url || (r as any).selfie_image_path}
@@ -910,18 +931,36 @@ export default function Attendance() {
                   : (selfieModal.record.photo_out_url || ((selfieModal.record.time_out && !selfieModal.record.photo_out_url && !selfieModal.record.photo_in_url) ? ((selfieModal.record as any).selfie_url || (selfieModal.record as any).selfie_image_path) : null))}
                 label={selfieModal.type === 'in' ? 'TIME IN' : 'TIME OUT'}
               />
-              <div className="text-[11px] text-muted-foreground p-2 bg-muted/50 rounded space-y-1">
-                <div className="flex items-start gap-1">
-                  <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
-                  <span>{(selfieModal.type === 'in' ? selfieModal.record.location_label_in : selfieModal.record.location_label_out) || "No location recorded"}</span>
-                </div>
-                {selfieModal.type === 'in' && selfieModal.record.gps_accuracy_in != null && (
-                  <div>GPS Accuracy: ±{Math.round(selfieModal.record.gps_accuracy_in)}m</div>
-                )}
-                {selfieModal.type === 'out' && selfieModal.record.gps_accuracy_out != null && (
-                  <div>GPS Accuracy: ±{Math.round(selfieModal.record.gps_accuracy_out)}m</div>
-                )}
-              </div>
+              {(() => {
+                const isIn = selfieModal.type === 'in';
+                const rec = selfieModal.record;
+                const lat = isIn ? rec.latitude_in : rec.latitude_out;
+                const lng = isIn ? rec.longitude_in : rec.longitude_out;
+                const acc = isIn ? rec.gps_accuracy_in : rec.gps_accuracy_out;
+                const addr = isIn ? rec.location_label_in : rec.location_label_out;
+                const capturedAt = isIn ? rec.location_captured_at_in : rec.location_captured_at_out;
+                const source = (isIn ? rec.location_source_in : rec.location_source_out) || rec.device_type;
+                return (
+                  <div className="text-[11px] text-muted-foreground p-2 bg-muted/50 rounded space-y-1">
+                    <div className="flex items-start gap-1">
+                      <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
+                      <span>{addr || (lat != null ? "Address unavailable" : "No location recorded")}</span>
+                    </div>
+                    {lat != null && lng != null && (
+                      <div>Latitude: {lat.toFixed(6)} · Longitude: {lng.toFixed(6)}</div>
+                    )}
+                    <div>GPS Accuracy: {acc != null ? `±${Math.round(acc)}m` : "Not recorded"}</div>
+                    {capturedAt && (
+                      <>
+                        <div>Captured Date: {new Date(capturedAt).toLocaleDateString()}</div>
+                        <div>Captured Time: {new Date(capturedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })}</div>
+                      </>
+                    )}
+                    {source && <div>Location Source: {source}</div>}
+                  </div>
+                );
+              })()}
+
             </div>
           )}
           <DialogFooter>

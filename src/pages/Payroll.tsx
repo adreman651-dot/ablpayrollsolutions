@@ -469,10 +469,23 @@ export default function Payroll() {
     }
   };
 
-  const saveOverrides = async () => {
+  // Saving deductions on a COMPLETED (locked) run requires an authorized override + reason.
+  const requestSaveOverrides = () => {
+    if (!viewingRun) return;
+    if (viewingRun.status === "completed") {
+      if (!canOverride) { toast.error("This payroll period is locked. You are not authorized to override it."); return; }
+      setOverrideReason("");
+      setOverrideCtx({ run: viewingRun, action: "save" });
+      return;
+    }
+    saveOverrides();
+  };
+
+  const saveOverrides = async (overrideReasonText?: string) => {
     if (!viewingRun) return;
     setSavingOverrides(true);
     try {
+      const auditRows: any[] = [];
       for (const item of viewItems) {
         const ov = overrides[item.employee_id];
         if (!ov) continue;
@@ -488,8 +501,37 @@ export default function Payroll() {
           total_deductions: totalDed,
           net_pay: +netPay.toFixed(2),
         }).eq("id", item.id);
+
+        if (overrideReasonText && (totalDed !== item.total_deductions || +netPay.toFixed(2) !== item.net_pay)) {
+          const e = item.employees;
+          auditRows.push({
+            payroll_run_id: viewingRun.id,
+            period_start: viewingRun.period_start,
+            period_end: viewingRun.period_end,
+            employee_id: item.employee_id,
+            employee_code: e?.employee_code ?? null,
+            employee_name: e ? `${e.last_name}, ${e.first_name}` : null,
+            original_gross: item.gross_pay,
+            new_gross: item.gross_pay,
+            original_days_worked: attendanceMap[item.employee_id]?.days ?? null,
+            new_days_worked: attendanceMap[item.employee_id]?.days ?? null,
+            original_deductions: item.total_deductions,
+            new_deductions: totalDed,
+            original_net_pay: item.net_pay,
+            new_net_pay: +netPay.toFixed(2),
+            action: "manual_deduction_override",
+            reason: overrideReasonText,
+            override_by: user?.id ?? null,
+            override_by_email: user?.email ?? null,
+            override_by_role: overrideRole,
+          });
+        }
       }
-      toast.success("Manual deductions saved. Refreshing...");
+      if (auditRows.length) {
+        const { error: auditErr } = await supabase.from("payroll_override_logs").insert(auditRows);
+        if (auditErr) toast.error(`Saved but audit log failed: ${auditErr.message}`);
+      }
+      toast.success(overrideReasonText ? "Override applied and audit logged. Refreshing..." : "Manual deductions saved. Refreshing...");
       await viewRun(viewingRun);
     } catch (err: any) {
       toast.error(err.message);
@@ -497,6 +539,7 @@ export default function Payroll() {
       setSavingOverrides(false);
     }
   };
+
 
   const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 
@@ -665,7 +708,7 @@ export default function Payroll() {
         <Table>
           <TableHeader><TableRow>
             <TableHead>Period</TableHead><TableHead>Run Date</TableHead>
-            <TableHead>Status</TableHead><TableHead className="w-40">Actions</TableHead>
+            <TableHead>Status</TableHead><TableHead className="w-56">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             {loading ? (
@@ -676,15 +719,25 @@ export default function Payroll() {
               <TableRow key={run.id}>
                 <TableCell className="font-medium">{run.period_start} — {run.period_end}</TableCell>
                 <TableCell>{run.run_date}</TableCell>
-                <TableCell><Badge variant={run.status === "completed" ? "default" : "secondary"}>{run.status}</Badge></TableCell>
+                <TableCell>
+                  {run.status === "completed" ? (
+                    <Badge className="gap-1"><Lock className="w-3 h-3" />COMPLETED / LOCKED</Badge>
+                  ) : (
+                    <Badge variant="secondary">{run.status}</Badge>
+                  )}
+                </TableCell>
                 <TableCell><div className="flex gap-1">
-                  <Button size="sm" variant="outline" onClick={() => processRun(run)} disabled={processing}>
+                  <Button size="sm" variant="outline" onClick={() => processRun(run)} disabled={processing || run.status === "completed"}>
                     <Play className="w-3 h-3 mr-1" />Process
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => viewRun(run)}>
                     <Eye className="w-3 h-3 mr-1" />View
                   </Button>
+                  <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(run)}>
+                    <Trash2 className="w-3 h-3 mr-1" />Delete
+                  </Button>
                 </div></TableCell>
+
               </TableRow>
             ))}
           </TableBody>
@@ -824,13 +877,107 @@ export default function Payroll() {
             </Table>
           </div>
 
-          <div className="p-4 border-t border-border flex justify-end">
-            <Button onClick={saveOverrides} disabled={savingOverrides}>
-              {savingOverrides ? "Saving..." : "Save Deductions & Recalculate"}
+          <div className="p-4 border-t border-border flex items-center justify-between gap-2 flex-wrap">
+            {viewingRun.status === "completed" && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Lock className="w-3 h-3" /> This payroll period is locked. Changes require an authorized manual override.
+              </p>
+            )}
+            <Button className="ml-auto" onClick={requestSaveOverrides} disabled={savingOverrides}>
+              {savingOverrides ? "Saving..." : viewingRun.status === "completed" ? "Manual Override & Recalculate" : "Save Deductions & Recalculate"}
             </Button>
           </div>
         </div>
       )}
+
+      {/* Payroll Already Processed (locked period) */}
+      <Dialog open={!!lockedRun} onOpenChange={open => !open && setLockedRun(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Lock className="w-4 h-4" />Payroll Already Processed</DialogTitle>
+            <DialogDescription>
+              This payroll period has already been processed and cannot be processed again.
+              {canOverride
+                ? " Please use the authorized manual override/reprocess workflow if changes are required."
+                : " Contact an Administrator, HR, or authorized Payroll Manager if changes are required."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLockedRun(null)}>Cancel</Button>
+            {canOverride && (
+              <Button onClick={() => {
+                const run = lockedRun!;
+                setLockedRun(null);
+                setOverrideReason("");
+                setOverrideCtx({ run, action: "reprocess" });
+              }}>Continue Override</Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual override — reason required */}
+      <Dialog open={!!overrideCtx} onOpenChange={open => { if (!open) { setOverrideCtx(null); setOverrideReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Payroll Period Locked</DialogTitle>
+            <DialogDescription>
+              This payroll period has already been processed. Manual override is required to make changes. Continue with Override?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Reason for Override <span className="text-destructive">*</span></Label>
+            <Textarea
+              value={overrideReason}
+              onChange={e => setOverrideReason(e.target.value)}
+              placeholder="e.g. Employee attendance was corrected after payroll processing."
+              rows={3}
+            />
+            <p className="text-xs text-muted-foreground">
+              Overriding as {user?.email} ({overrideRole}). This action is recorded in the payroll audit log.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setOverrideCtx(null); setOverrideReason(""); }}>Cancel</Button>
+            <Button onClick={submitOverride} disabled={!overrideReason.trim() || processing || savingOverrides}>Continue Override</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete payroll transaction */}
+      <Dialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Delete this payroll transaction?</DialogTitle>
+            <DialogDescription>
+              This action will permanently remove this payroll record and its associated payroll transaction data. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteTarget?.status === "completed" && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm flex gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 text-destructive shrink-0" />
+              <span>
+                This payroll has already been processed. Deleting it will permanently remove the processed payroll transaction.
+                This action should only be performed by an authorized administrator.
+              </span>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Employees, attendance, leaves, loans, selfies and other payroll periods are not affected.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleting || (deleteTarget?.status === "completed" && !canDeleteCompleted)}
+            >
+              {deleting ? "Deleting..." : "Delete Payroll"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       
       {/* Attendance Location Summary Modal */}
       <Dialog open={!!breakdownEmployee} onOpenChange={open => !open && setBreakdownEmployee(null)}>
