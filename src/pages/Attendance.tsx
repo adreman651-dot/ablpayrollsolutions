@@ -37,6 +37,10 @@ interface AttendanceRecord {
   location_label_out: string | null;
   gps_accuracy_in: number | null;
   gps_accuracy_out: number | null;
+  location_captured_at_in?: string | null;
+  location_captured_at_out?: string | null;
+  location_source_in?: string | null;
+  location_source_out?: string | null;
   status: string | null;
   attendance_status: string | null;
   status_reason: string | null;
