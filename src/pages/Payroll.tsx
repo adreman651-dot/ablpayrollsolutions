@@ -469,10 +469,23 @@ export default function Payroll() {
     }
   };
 
-  const saveOverrides = async () => {
+  // Saving deductions on a COMPLETED (locked) run requires an authorized override + reason.
+  const requestSaveOverrides = () => {
+    if (!viewingRun) return;
+    if (viewingRun.status === "completed") {
+      if (!canOverride) { toast.error("This payroll period is locked. You are not authorized to override it."); return; }
+      setOverrideReason("");
+      setOverrideCtx({ run: viewingRun, action: "save" });
+      return;
+    }
+    saveOverrides();
+  };
+
+  const saveOverrides = async (overrideReasonText?: string) => {
     if (!viewingRun) return;
     setSavingOverrides(true);
     try {
+      const auditRows: any[] = [];
       for (const item of viewItems) {
         const ov = overrides[item.employee_id];
         if (!ov) continue;
@@ -488,8 +501,37 @@ export default function Payroll() {
           total_deductions: totalDed,
           net_pay: +netPay.toFixed(2),
         }).eq("id", item.id);
+
+        if (overrideReasonText && (totalDed !== item.total_deductions || +netPay.toFixed(2) !== item.net_pay)) {
+          const e = item.employees;
+          auditRows.push({
+            payroll_run_id: viewingRun.id,
+            period_start: viewingRun.period_start,
+            period_end: viewingRun.period_end,
+            employee_id: item.employee_id,
+            employee_code: e?.employee_code ?? null,
+            employee_name: e ? `${e.last_name}, ${e.first_name}` : null,
+            original_gross: item.gross_pay,
+            new_gross: item.gross_pay,
+            original_days_worked: attendanceMap[item.employee_id]?.days ?? null,
+            new_days_worked: attendanceMap[item.employee_id]?.days ?? null,
+            original_deductions: item.total_deductions,
+            new_deductions: totalDed,
+            original_net_pay: item.net_pay,
+            new_net_pay: +netPay.toFixed(2),
+            action: "manual_deduction_override",
+            reason: overrideReasonText,
+            override_by: user?.id ?? null,
+            override_by_email: user?.email ?? null,
+            override_by_role: overrideRole,
+          });
+        }
       }
-      toast.success("Manual deductions saved. Refreshing...");
+      if (auditRows.length) {
+        const { error: auditErr } = await supabase.from("payroll_override_logs").insert(auditRows);
+        if (auditErr) toast.error(`Saved but audit log failed: ${auditErr.message}`);
+      }
+      toast.success(overrideReasonText ? "Override applied and audit logged. Refreshing..." : "Manual deductions saved. Refreshing...");
       await viewRun(viewingRun);
     } catch (err: any) {
       toast.error(err.message);
@@ -497,6 +539,7 @@ export default function Payroll() {
       setSavingOverrides(false);
     }
   };
+
 
   const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 
