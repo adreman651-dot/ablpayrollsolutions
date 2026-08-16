@@ -708,7 +708,7 @@ export default function Payroll() {
         <Table>
           <TableHeader><TableRow>
             <TableHead>Period</TableHead><TableHead>Run Date</TableHead>
-            <TableHead>Status</TableHead><TableHead className="w-40">Actions</TableHead>
+            <TableHead>Status</TableHead><TableHead className="w-56">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
             {loading ? (
@@ -719,15 +719,25 @@ export default function Payroll() {
               <TableRow key={run.id}>
                 <TableCell className="font-medium">{run.period_start} — {run.period_end}</TableCell>
                 <TableCell>{run.run_date}</TableCell>
-                <TableCell><Badge variant={run.status === "completed" ? "default" : "secondary"}>{run.status}</Badge></TableCell>
+                <TableCell>
+                  {run.status === "completed" ? (
+                    <Badge className="gap-1"><Lock className="w-3 h-3" />COMPLETED / LOCKED</Badge>
+                  ) : (
+                    <Badge variant="secondary">{run.status}</Badge>
+                  )}
+                </TableCell>
                 <TableCell><div className="flex gap-1">
-                  <Button size="sm" variant="outline" onClick={() => processRun(run)} disabled={processing}>
+                  <Button size="sm" variant="outline" onClick={() => processRun(run)} disabled={processing || run.status === "completed"}>
                     <Play className="w-3 h-3 mr-1" />Process
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => viewRun(run)}>
                     <Eye className="w-3 h-3 mr-1" />View
                   </Button>
+                  <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(run)}>
+                    <Trash2 className="w-3 h-3 mr-1" />Delete
+                  </Button>
                 </div></TableCell>
+
               </TableRow>
             ))}
           </TableBody>
