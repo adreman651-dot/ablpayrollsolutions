@@ -786,6 +786,14 @@ export default function Attendance() {
                           {r.gps_accuracy_in != null && ` · ±${Math.round(r.gps_accuracy_in)}m`}
                         </div>
                       )}
+                      {r.location_label_in && (
+                        <div className="text-[10px] text-muted-foreground max-w-[220px] truncate" title={r.location_label_in}>{r.location_label_in}</div>
+                      )}
+                      {r.location_captured_at_in && (
+                        <div className="text-[10px] text-muted-foreground/70">
+                          Loc @ {new Date(r.location_captured_at_in).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       {r.time_out ? new Date(r.time_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : "—"}
@@ -796,7 +804,16 @@ export default function Attendance() {
                           {r.gps_accuracy_out != null && ` · ±${Math.round(r.gps_accuracy_out)}m`}
                         </div>
                       )}
+                      {r.location_label_out && (
+                        <div className="text-[10px] text-muted-foreground max-w-[220px] truncate" title={r.location_label_out}>{r.location_label_out}</div>
+                      )}
+                      {r.location_captured_at_out && (
+                        <div className="text-[10px] text-muted-foreground/70">
+                          Loc @ {new Date(r.location_captured_at_out).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </div>
+                      )}
                     </TableCell>
+
                     <TableCell className="text-center">
                       <SelfieThumb
                         src={r.photo_in_url || (r as any).selfie_url || (r as any).selfie_image_path}
