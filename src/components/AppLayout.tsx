@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { SyncButton } from "@/components/SyncButton";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import CelebrationDialog from "@/components/CelebrationDialog";
 
 const APP_VERSION = '1.0.0';
 
@@ -270,6 +271,8 @@ export default function AppLayout() {
           </main>
         </div>
       </div>
+
+      <CelebrationDialog />
 
       {/* Page title accessible (hidden, used by SR) */}
       <span className="sr-only">{title}</span>
