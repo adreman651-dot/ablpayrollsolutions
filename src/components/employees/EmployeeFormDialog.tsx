@@ -21,6 +21,7 @@ interface EmployeeFormData {
   job_title: string;
   basic_salary: number;
   hire_date: string;
+  birthdate?: string;
   sss_number: string;
   philhealth_number: string;
   pagibig_number: string;
@@ -229,6 +230,10 @@ export default function EmployeeFormDialog({ open, onOpenChange, form, setForm, 
           <div className="space-y-2">
             <Label>Hire Date *</Label>
             <Input type="date" value={form.hire_date} onChange={e => setForm({ ...form, hire_date: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Birthday</Label>
+            <Input type="date" value={form.birthdate || ""} onChange={e => setForm({ ...form, birthdate: e.target.value })} />
           </div>
 
           {/* ── Payroll Configuration ── */}
