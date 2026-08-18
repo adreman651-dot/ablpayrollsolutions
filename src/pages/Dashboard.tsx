@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Users, Clock, AlertTriangle, UserX, Landmark, DollarSign, TrendingDown, TrendingUp, ClipboardList, Sparkles, Server, ShieldCheck, Activity, RefreshCw } from "lucide-react";
 import { useAppUpdate } from "@/hooks/useAppUpdate";
+import { useAuth } from "@/hooks/useAuth";
+import { fetchTodaysCelebrations, type Celebrations } from "@/lib/celebrations";
 import { formatCurrency } from "@/lib/payroll-utils";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
