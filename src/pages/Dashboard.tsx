@@ -194,6 +194,33 @@ export default function Dashboard() {
         </span>
       </div>
 
+      {/* Today's Celebrations */}
+      {celebrations && (celebrations.birthdays.length > 0 || celebrations.anniversaries.length > 0) && (
+        <div className="glass-card p-5 animate-fade-in">
+          <h3 className="font-display font-semibold text-white text-lg mb-3">🎉 Today's Celebrations</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            {celebrations.birthdays.length > 0 && (
+              <div>
+                <div className="text-slate-300 font-medium mb-1">🎂 Birthdays</div>
+                <ul className="space-y-1 text-slate-400">
+                  {celebrations.birthdays.map(b => <li key={b.id}>• {b.name}</li>)}
+                </ul>
+              </div>
+            )}
+            {celebrations.anniversaries.length > 0 && (
+              <div>
+                <div className="text-slate-300 font-medium mb-1">🏆 Work Anniversaries</div>
+                <ul className="space-y-1 text-slate-400">
+                  {celebrations.anniversaries.map(a => (
+                    <li key={a.id}>• {a.name} — {a.years} {a.years === 1 ? "Year" : "Years"}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Two-column grid: charts (60%) + KPIs (40%) */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         {/* Left: Charts */}
