@@ -46,6 +46,15 @@ export default function Dashboard() {
   });
   const [loading, setLoading] = useState(true);
 
+  const { roles } = useAuth();
+  const canSeeCelebrations = roles.some(r => ["admin", "hr", "payroll_officer"].includes(r));
+  const [celebrations, setCelebrations] = useState<Celebrations | null>(null);
+
+  useEffect(() => {
+    if (!canSeeCelebrations) return;
+    fetchTodaysCelebrations().then(setCelebrations).catch(() => {});
+  }, [canSeeCelebrations]);
+
   useEffect(() => {
     (async () => {
       try {
