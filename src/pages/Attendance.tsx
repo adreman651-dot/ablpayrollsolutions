@@ -193,6 +193,8 @@ export default function Attendance() {
     employee_id: '',
     date: new Date().toISOString().split("T")[0],
     status: 'Day Off',
+    time_in: '',
+    time_out: '',
     reason: '',
   });
   const [manualCurrentStatus, setManualCurrentStatus] = useState<string>('—');
@@ -226,7 +228,13 @@ export default function Attendance() {
   const handleManualSubmit = async () => {
     if (isFutureDate(manualForm.date)) return;
     if (!manualForm.employee_id) { toast.error("Select an employee"); return; }
-    if (!manualForm.reason.trim()) { toast.error("Reason is required"); return; }
+    if (!manualForm.reason.trim()) { toast.error("Reason for Override is required"); return; }
+    if (manualForm.status === 'Present' && (!manualForm.time_in || !manualForm.time_out)) {
+      toast.error("Time In and Time Out are required for Present"); return;
+    }
+    if (manualForm.time_in && manualForm.time_out && manualForm.time_out <= manualForm.time_in) {
+      toast.error("Time Out must be after Time In"); return;
+    }
 
     setSaving(true);
     const { data: runs, error } = await supabase.from('payroll_runs')
@@ -263,6 +271,11 @@ export default function Attendance() {
         locked: true,
       };
 
+      // Manual Time In / Time Out entry (for employees who forgot to punch)
+      const toISO = (t: string) => t ? new Date(`${manualForm.date}T${t}:00`).toISOString() : null;
+      const manualIn = isDayOff ? null : toISO(manualForm.time_in);
+      const manualOut = isDayOff ? null : toISO(manualForm.time_out);
+
       if (isDayOff) {
         updates.time_in = null;
         updates.time_out = null;
@@ -270,6 +283,15 @@ export default function Attendance() {
         updates.late_minutes = 0;
         updates.undertime_minutes = 0;
         updates.status = manualForm.status.toUpperCase();
+      } else if (manualIn || manualOut) {
+        updates.time_in = manualIn;
+        updates.time_out = manualOut;
+        updates.status = manualOut ? 'COMPLETED' : 'On Time';
+        updates.device_type = 'Manual Entry';
+        if (manualIn && manualOut) {
+          const hrs = (new Date(manualOut).getTime() - new Date(manualIn).getTime()) / 3600000;
+          updates.total_hours = hrs > 0 ? +hrs.toFixed(2) : 0;
+        }
       }
 
       const { data: existing } = await supabase.from('attendance')
@@ -286,6 +308,29 @@ export default function Attendance() {
         if (error) throw error;
         recordId = ins.id;
         actionType = 'MANUAL_CREATE';
+      }
+
+      // Manual override audit trail (original vs new Time In / Time Out)
+      if (!isDayOff && (manualIn || manualOut)) {
+        try {
+          await supabase.from('attendance_overrides').insert({
+            attendance_id: recordId,
+            employee_id: manualForm.employee_id,
+            employee_name: `${employee.first_name} ${employee.last_name}`,
+            original_time_in: existing?.time_in ?? null,
+            new_time_in: manualIn,
+            original_time_out: existing?.time_out ?? null,
+            new_time_out: manualOut,
+            original_date: existing?.date ?? null,
+            new_date: manualForm.date,
+            reason: manualForm.reason.trim(),
+            modified_by: user?.id ?? null,
+            modified_by_email: user?.email ?? null,
+            modified_by_role: roles?.[0] || 'admin',
+            device: navigator.userAgent.substring(0, 200),
+            platform: Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web"),
+          });
+        } catch (e) { console.warn('Manual override audit failed', e); }
       }
 
       const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
@@ -330,7 +375,7 @@ export default function Attendance() {
       setManualModalOpen(false);
       setPayrollProcessedWarningOpen(false);
       setManualSaveConfirmOpen(false);
-      setManualForm({ employee_id: '', date: new Date().toISOString().split("T")[0], status: 'Day Off', reason: '' });
+      setManualForm({ employee_id: '', date: new Date().toISOString().split("T")[0], status: 'Day Off', time_in: '', time_out: '', reason: '' });
       fetchAttendance();
     } catch (e: any) {
       toast.error('Failed: ' + e.message);
@@ -1131,6 +1176,7 @@ export default function Attendance() {
                   value={manualForm.status}
                   onChange={e => setManualForm(f => ({ ...f, status: e.target.value }))}
                 >
+                  <option value="Present">Present (Manual Time In/Out)</option>
                   <option value="Day Off">Day Off</option>
                   <option value="Rest Day">Rest Day</option>
                   <option value="Holiday">Holiday</option>
@@ -1141,6 +1187,18 @@ export default function Attendance() {
                   <option value="Absent">Absent</option>
                 </select>
               </div>
+              {!['Day Off', 'Rest Day', 'Absent'].includes(manualForm.status) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Time In</Label>
+                    <Input type="time" value={manualForm.time_in} onChange={e => setManualForm(f => ({ ...f, time_in: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Time Out</Label>
+                    <Input type="time" value={manualForm.time_out} onChange={e => setManualForm(f => ({ ...f, time_out: e.target.value }))} />
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label>Reason *</Label>
                 <Input
