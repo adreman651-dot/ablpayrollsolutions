@@ -367,7 +367,7 @@ export default function Attendance() {
       setManualModalOpen(false);
       setPayrollProcessedWarningOpen(false);
       setManualSaveConfirmOpen(false);
-      setManualForm({ employee_id: '', date: new Date().toISOString().split("T")[0], status: 'Day Off', reason: '' });
+      setManualForm({ employee_id: '', date: new Date().toISOString().split("T")[0], status: 'Day Off', time_in: '', time_out: '', reason: '' });
       fetchAttendance();
     } catch (e: any) {
       toast.error('Failed: ' + e.message);
