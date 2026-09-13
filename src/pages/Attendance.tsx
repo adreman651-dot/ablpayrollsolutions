@@ -263,6 +263,11 @@ export default function Attendance() {
         locked: true,
       };
 
+      // Manual Time In / Time Out entry (for employees who forgot to punch)
+      const toISO = (t: string) => t ? new Date(`${manualForm.date}T${t}:00`).toISOString() : null;
+      const manualIn = isDayOff ? null : toISO(manualForm.time_in);
+      const manualOut = isDayOff ? null : toISO(manualForm.time_out);
+
       if (isDayOff) {
         updates.time_in = null;
         updates.time_out = null;
@@ -270,6 +275,15 @@ export default function Attendance() {
         updates.late_minutes = 0;
         updates.undertime_minutes = 0;
         updates.status = manualForm.status.toUpperCase();
+      } else if (manualIn || manualOut) {
+        updates.time_in = manualIn;
+        updates.time_out = manualOut;
+        updates.status = manualOut ? 'COMPLETED' : 'On Time';
+        updates.device_type = 'Manual Entry';
+        if (manualIn && manualOut) {
+          const hrs = (new Date(manualOut).getTime() - new Date(manualIn).getTime()) / 3600000;
+          updates.total_hours = hrs > 0 ? +hrs.toFixed(2) : 0;
+        }
       }
 
       const { data: existing } = await supabase.from('attendance')
@@ -286,6 +300,29 @@ export default function Attendance() {
         if (error) throw error;
         recordId = ins.id;
         actionType = 'MANUAL_CREATE';
+      }
+
+      // Manual override audit trail (original vs new Time In / Time Out)
+      if (!isDayOff && (manualIn || manualOut)) {
+        try {
+          await supabase.from('attendance_overrides').insert({
+            attendance_id: recordId,
+            employee_id: manualForm.employee_id,
+            employee_name: `${employee.first_name} ${employee.last_name}`,
+            original_time_in: existing?.time_in ?? null,
+            new_time_in: manualIn,
+            original_time_out: existing?.time_out ?? null,
+            new_time_out: manualOut,
+            original_date: existing?.date ?? null,
+            new_date: manualForm.date,
+            reason: manualForm.reason.trim(),
+            modified_by: user?.id ?? null,
+            modified_by_email: user?.email ?? null,
+            modified_by_role: roles?.[0] || 'admin',
+            device: navigator.userAgent.substring(0, 200),
+            platform: Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web"),
+          });
+        } catch (e) { console.warn('Manual override audit failed', e); }
       }
 
       const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
