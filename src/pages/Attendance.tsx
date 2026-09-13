@@ -228,7 +228,13 @@ export default function Attendance() {
   const handleManualSubmit = async () => {
     if (isFutureDate(manualForm.date)) return;
     if (!manualForm.employee_id) { toast.error("Select an employee"); return; }
-    if (!manualForm.reason.trim()) { toast.error("Reason is required"); return; }
+    if (!manualForm.reason.trim()) { toast.error("Reason for Override is required"); return; }
+    if (manualForm.status === 'Present' && (!manualForm.time_in || !manualForm.time_out)) {
+      toast.error("Time In and Time Out are required for Present"); return;
+    }
+    if (manualForm.time_in && manualForm.time_out && manualForm.time_out <= manualForm.time_in) {
+      toast.error("Time Out must be after Time In"); return;
+    }
 
     setSaving(true);
     const { data: runs, error } = await supabase.from('payroll_runs')
