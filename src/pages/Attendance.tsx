@@ -193,6 +193,8 @@ export default function Attendance() {
     employee_id: '',
     date: new Date().toISOString().split("T")[0],
     status: 'Day Off',
+    time_in: '',
+    time_out: '',
     reason: '',
   });
   const [manualCurrentStatus, setManualCurrentStatus] = useState<string>('—');
