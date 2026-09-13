@@ -1170,6 +1170,7 @@ export default function Attendance() {
                   value={manualForm.status}
                   onChange={e => setManualForm(f => ({ ...f, status: e.target.value }))}
                 >
+                  <option value="Present">Present (Manual Time In/Out)</option>
                   <option value="Day Off">Day Off</option>
                   <option value="Rest Day">Rest Day</option>
                   <option value="Holiday">Holiday</option>
@@ -1180,6 +1181,18 @@ export default function Attendance() {
                   <option value="Absent">Absent</option>
                 </select>
               </div>
+              {!['Day Off', 'Rest Day', 'Absent'].includes(manualForm.status) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Time In</Label>
+                    <Input type="time" value={manualForm.time_in} onChange={e => setManualForm(f => ({ ...f, time_in: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Time Out</Label>
+                    <Input type="time" value={manualForm.time_out} onChange={e => setManualForm(f => ({ ...f, time_out: e.target.value }))} />
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 <Label>Reason *</Label>
                 <Input
