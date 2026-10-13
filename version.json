@@ -1,9 +1,9 @@
 {
-    "versionCode": 46,
-    "versionName": "1.0.46",
+    "versionCode": 47,
+    "versionName": "1.0.47",
     "minimumVersion": 1,
     "mandatory": false,
-    "releaseDate": "2026-09-30",
+    "releaseDate": "2026-10-13",
     "apkUrl": "https://github.com/adreman651-dot/ablpayrollsolutions/releases/latest/download/app-release.apk",
     "releaseNotesUrl": "https://github.com/adreman651-dot/ablpayrollsolutions/releases/latest/download/release-notes.json"
 }
