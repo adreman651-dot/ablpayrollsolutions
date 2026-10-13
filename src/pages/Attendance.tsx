@@ -200,6 +200,10 @@ export default function Attendance() {
   const [manualCurrentStatus, setManualCurrentStatus] = useState<string>('—');
   const [payrollProcessedWarningOpen, setPayrollProcessedWarningOpen] = useState(false);
   const [manualSaveConfirmOpen, setManualSaveConfirmOpen] = useState(false);
+  const [editPayrollWarnOpen, setEditPayrollWarnOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AttendanceRecord | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deletePayrollProcessed, setDeletePayrollProcessed] = useState(false);
 
   useEffect(() => {
     if (!manualForm.employee_id || !manualForm.date) {
@@ -452,6 +456,79 @@ export default function Attendance() {
       longitude_out: r.longitude_out != null ? String(r.longitude_out) : '',
       reason: '',
     });
+  };
+
+  const hasCompletedPayroll = async (dates: string[]) => {
+    for (const d of dates.filter(Boolean)) {
+      const { data } = await supabase.from('payroll_runs').select('id')
+        .lte('period_start', d).gte('period_end', d).eq('status', 'completed');
+      if (data && data.length > 0) return true;
+    }
+    return false;
+  };
+
+  const requestEditSave = async () => {
+    if (!editModal) return;
+    if (!editForm.reason.trim()) { toast.error("Reason for Override is required."); return; }
+    if (editForm.time_in && editForm.time_out && editForm.time_out <= editForm.time_in) {
+      toast.error("Time Out must be after Time In"); return;
+    }
+    setSaving(true);
+    try {
+      if (editForm.date && editForm.date !== editModal.date) {
+        const { data: dup } = await supabase.from('attendance').select('id')
+          .eq('employee_id', editModal.employee_id).eq('date', editForm.date).limit(1);
+        if (dup && dup.length > 0) {
+          toast.error("An attendance record already exists for this employee on that date.");
+          return;
+        }
+      }
+      if (await hasCompletedPayroll([editModal.date, editForm.date])) setEditPayrollWarnOpen(true);
+      else setConfirmOpen(true);
+    } finally { setSaving(false); }
+  };
+
+  const requestDelete = async (r: AttendanceRecord) => {
+    setDeleteReason("");
+    setDeletePayrollProcessed(await hasCompletedPayroll([r.date]));
+    setDeleteTarget(r);
+  };
+
+  const performDelete = async () => {
+    if (!deleteTarget) return;
+    if (!deleteReason.trim()) { toast.error("Reason is required."); return; }
+    setSaving(true);
+    try {
+      const r = deleteTarget;
+      // Preserve existing audit history (FK would cascade) by detaching it first.
+      await supabase.from('attendance_overrides').update({ attendance_id: null }).eq('attendance_id', r.id);
+      // Delete ONLY this attendance row; employee records and selfie files are untouched.
+      const { error } = await supabase.from('attendance').delete().eq('id', r.id);
+      if (error) throw error;
+      const platform = Capacitor.isNativePlatform() ? "Android" : (window.electronAPI ? "Desktop" : "Web");
+      try {
+        await supabase.from('attendance_overrides').insert({
+          attendance_id: null,
+          employee_id: r.employee_id,
+          employee_name: r.employees ? `${r.employees.first_name} ${r.employees.last_name}` : null,
+          original_date: r.date, new_date: null,
+          original_time_in: r.time_in, new_time_in: null,
+          original_time_out: r.time_out, new_time_out: null,
+          original_selfie_in: r.photo_in_url ?? null, original_selfie_out: r.photo_out_url ?? null,
+          reason: `[DELETED] ${deleteReason.trim()}`,
+          modified_by: user?.id ?? null,
+          modified_by_email: user?.email ?? null,
+          modified_by_role: roles?.[0] || null,
+          platform, device: navigator.userAgent.slice(0, 200),
+        } as any);
+      } catch (e) { console.warn('Audit log write failed:', e); }
+      try { await recalculatePayrollForDate(r.date); } catch (e) { console.warn('Payroll recalc failed:', e); }
+      toast.success('Attendance record deleted.');
+      setDeleteTarget(null);
+      await fetchAttendance();
+    } catch (err: any) {
+      toast.error('Delete failed: ' + err.message);
+    } finally { setSaving(false); }
   };
 
   const performSave = async () => {
