@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { MapPin, Image as ImageIcon, Pencil, X, Lock, ZoomIn, ZoomOut, ChevronDown, Search } from "lucide-react";
+import { MapPin, Image as ImageIcon, Pencil, X, Lock, ZoomIn, ZoomOut, ChevronDown, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { offlineExecute } from "@/lib/offlineDb";
@@ -1013,6 +1013,11 @@ export default function Attendance() {
                         <Button size="sm" variant="ghost" onClick={() => openEditModal(r)} className="h-8 w-8 p-0" title={(isLocked || r.attendance_status === 'Absent') ? "Override Attendance" : "Edit Record"}>
                           <Pencil className="w-4 h-4" />
                         </Button>
+                        {!isVirtualAbsent(r.id) && (
+                          <Button size="sm" variant="ghost" onClick={() => requestDelete(r)} className="h-8 w-8 p-0 text-destructive" title="Delete Record">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </TableCell>
                     )}
                   </TableRow>
@@ -1153,7 +1158,7 @@ export default function Attendance() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditModal(null)} disabled={saving}>Cancel</Button>
-              <Button onClick={() => setConfirmOpen(true)} disabled={saving || !editForm.reason.trim()}>
+              <Button onClick={requestEditSave} disabled={saving || !editForm.reason.trim()}>
                 {saving ? 'Saving...' : 'Save Override'}
               </Button>
             </DialogFooter>
@@ -1173,6 +1178,49 @@ export default function Attendance() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={saving}>Cancel</Button>
             <Button onClick={performSave} disabled={saving}>{saving ? 'Saving...' : 'Confirm & Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit: payroll already processed warning */}
+      <Dialog open={editPayrollWarnOpen} onOpenChange={setEditPayrollWarnOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Payroll Already Processed</DialogTitle>
+            <DialogDescription>
+              This attendance belongs to a payroll period that has already been processed. Saving will override the record and reprocess payroll. Continue?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditPayrollWarnOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => { setEditPayrollWarnOpen(false); setConfirmOpen(true); }}>
+              Override &amp; Reprocess Payroll
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Attendance Confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Attendance Record</DialogTitle>
+            <DialogDescription>
+              Delete the attendance of {deleteTarget?.employees ? `${deleteTarget.employees.first_name} ${deleteTarget.employees.last_name}` : deleteTarget?.employee_name} on {deleteTarget?.date}? Only this record is removed — the employee and selfies are kept.
+            </DialogDescription>
+          </DialogHeader>
+          {deletePayrollProcessed && (
+            <p className="text-sm text-destructive">Payroll for this period is already processed. Deleting will reprocess payroll.</p>
+          )}
+          <div className="space-y-1">
+            <Label>Reason <span className="text-destructive">*</span></Label>
+            <Textarea value={deleteReason} onChange={e => setDeleteReason(e.target.value)} placeholder="Reason for deleting" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={saving}>Cancel</Button>
+            <Button variant="destructive" onClick={performDelete} disabled={saving || !deleteReason.trim()}>
+              {saving ? 'Deleting...' : 'Delete'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
